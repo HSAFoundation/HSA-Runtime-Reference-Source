@@ -1,0 +1,300 @@
+////////////////////////////////////////////////////////////////////////////////
+//
+// Copyright 2014 ADVANCED MICRO DEVICES, INC.
+//
+// AMD is granting you permission to use this software and documentation(if any)
+// (collectively, the "Materials") pursuant to the terms and conditions of the
+// Software License Agreement included with the Materials.If you do not have a
+// copy of the Software License Agreement, contact your AMD representative for a
+// copy.
+//
+// You agree that you will not reverse engineer or decompile the Materials, in
+// whole or in part, except as allowed by applicable law.
+//
+// WARRANTY DISCLAIMER : THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF
+// ANY KIND.AMD DISCLAIMS ALL WARRANTIES, EXPRESS, IMPLIED, OR STATUTORY,
+// INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON - INFRINGEMENT, THAT THE
+// SOFTWARE WILL RUN UNINTERRUPTED OR ERROR - FREE OR WARRANTIES ARISING FROM
+// CUSTOM OF TRADE OR COURSE OF USAGE.THE ENTIRE RISK ASSOCIATED WITH THE USE OF
+// THE SOFTWARE IS ASSUMED BY YOU.Some jurisdictions do not allow the exclusion
+// of implied warranties, so the above exclusion may not apply to You.
+//
+// LIMITATION OF LIABILITY AND INDEMNIFICATION : AMD AND ITS LICENSORS WILL NOT,
+// UNDER ANY CIRCUMSTANCES BE LIABLE TO YOU FOR ANY PUNITIVE, DIRECT,
+// INCIDENTAL, INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING FROM USE OF
+// THE SOFTWARE OR THIS AGREEMENT EVEN IF AMD AND ITS LICENSORS HAVE BEEN
+// ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.In no event shall AMD's total
+// liability to You for all damages, losses, and causes of action (whether in
+// contract, tort (including negligence) or otherwise) exceed the amount of $100
+// USD.  You agree to defend, indemnify and hold harmless AMD and its licensors,
+// and any of their directors, officers, employees, affiliates or agents from
+// and against any and all loss, damage, liability and other expenses (including
+// reasonable attorneys' fees), resulting from Your use of the Software or
+// violation of the terms and conditions of this Agreement.
+//
+// U.S.GOVERNMENT RESTRICTED RIGHTS : The Materials are provided with
+// "RESTRICTED RIGHTS." Use, duplication, or disclosure by the Government is
+// subject to the restrictions as set forth in FAR 52.227 - 14 and DFAR252.227 -
+// 7013, et seq., or its successor.Use of the Materials by the Government
+// constitutes acknowledgement of AMD's proprietary rights in them.
+//
+// EXPORT RESTRICTIONS: The Materials may be subject to export restrictions as
+//                      stated in the Software License Agreement.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+#include "core/inc/amd_memory_region.h"
+
+#include <algorithm>
+
+#include "core/inc/runtime.h"
+#include "core/inc/memory_database.h"
+#include "core/inc/amd_cpu_agent.h"
+#include "core/inc/amd_gpu_agent.h"
+#include "core/inc/thunk.h"
+#include "core/util/utils.h"
+
+namespace amd {
+/// @brief Allocate agent accessible memory (system / local memory).
+static void* AllocateKfdMemory(const HsaMemFlags& flag, HSAuint32 node_id,
+                               size_t size) {
+  void* ret = NULL;
+  const HSAKMT_STATUS status = hsaKmtAllocMemory(node_id, size, flag, &ret);
+  if (status != HSAKMT_STATUS_SUCCESS) return NULL;
+
+  core::Runtime::runtime_singleton_->Register(ret, size, false);
+
+  return ret;
+}
+
+/// @brief Free agent accessible memory (system / local memory).
+static void FreeKfdMemory(void* ptr, size_t size) {
+  if (ptr == NULL || size == 0) {
+    return;
+  }
+
+  // Completely deregister ptr (could be two references on the registration due
+  // to an explicit registration call)
+  while (core::Runtime::runtime_singleton_->Deregister(ptr))
+    ;
+
+  HSAKMT_STATUS status = hsaKmtFreeMemory(ptr, size);
+  assert(status == HSAKMT_STATUS_SUCCESS);
+}
+
+static bool MakeKfdMemoryResident(void* ptr, size_t size) {
+  HSAuint64 alternate_va;
+  HSAKMT_STATUS status = hsaKmtMapMemoryToGPU(ptr, size, &alternate_va);
+  return (status == HSAKMT_STATUS_SUCCESS);
+}
+
+static void MakeKfdMemoryUnresident(void* ptr) { hsaKmtUnmapMemoryToGPU(ptr); }
+
+MemoryRegion::MemoryRegion(bool fine_grain, const core::Agent& owner,
+                           const HsaMemoryProperties& mem_props)
+    : core::MemoryRegion(fine_grain),
+      owner_(&owner),
+      mem_props_(mem_props),
+      max_single_alloc_size_(0) {
+  mem_flag_.Value = 0;
+  if (IsLocalMemory()) {
+    mem_flag_.ui32.PageSize = HSA_PAGE_SIZE_4KB;
+    mem_flag_.ui32.NoSubstitute = 1;
+    mem_flag_.ui32.HostAccess = 0;
+    mem_flag_.ui32.NonPaged = 1;
+
+    char* char_end = NULL;
+    const HSAuint64 user_max_size = static_cast<HSAuint64>(strtoull(
+        os::GetEnvVar("HSA_LOCAL_MEMORY_MAX_ALLOC").c_str(), &char_end, 10));
+    max_single_alloc_size_ = static_cast<size_t>(
+        std::max(user_max_size, mem_props_.SizeInBytes / 4));
+    max_single_alloc_size_ = AlignUp(max_single_alloc_size_, kPageSize_);
+    max_single_alloc_size_ = std::min(
+        static_cast<size_t>(mem_props_.SizeInBytes), max_single_alloc_size_);
+  } else if (IsSystem()) {
+    mem_flag_.ui32.PageSize = HSA_PAGE_SIZE_4KB;
+    mem_flag_.ui32.NoSubstitute = 1;
+    mem_flag_.ui32.HostAccess = 1;
+    mem_flag_.ui32.CachePolicy = HSA_CACHING_CACHED;
+    
+    max_single_alloc_size_ = mem_props_.SizeInBytes;
+  }
+}
+
+MemoryRegion::~MemoryRegion() {}
+
+hsa_status_t MemoryRegion::Allocate(size_t size, void** address) const {
+  if (address == NULL) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+
+  const HSAuint32 node_id =
+      (owner_->device_type() == core::Agent::kAmdGpuDevice)
+          ? static_cast<const amd::GpuAgent*>(owner_)->node_id()
+          : static_cast<const amd::CpuAgent*>(owner_)->node_id();
+
+  *address = amd::AllocateKfdMemory(mem_flag_, node_id, size);
+
+  if (*address != NULL && IsSystem()) {
+    amd::MakeKfdMemoryResident(*address, size);
+  }
+
+  return (*address != NULL) ? HSA_STATUS_SUCCESS
+                            : HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+}
+
+hsa_status_t MemoryRegion::Free(void* address, size_t size) const {
+  amd::MakeKfdMemoryUnresident(address);
+
+  amd::FreeKfdMemory(address, size);
+
+  return HSA_STATUS_SUCCESS;
+}
+
+static __forceinline uint32_t
+    CalculateDDR3Bandwidth(uint32_t clock, uint32_t width) {
+  // clock * 4 (bus clock multiplier) * 2 (double data rate) * width (in bits) /
+  // 8 (bits in byte)
+  return clock * width;
+}
+
+hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
+                                   void* value) const {
+  uint32_t bandwidth_multiplier = 1;
+  switch (attribute) {
+    case HSA_REGION_INFO_SEGMENT:
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_SYSTEM:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          *((hsa_region_segment_t*)value) = HSA_REGION_SEGMENT_GLOBAL;
+          break;
+        case HSA_HEAPTYPE_GPU_LDS:
+          *((hsa_region_segment_t*)value) = HSA_REGION_SEGMENT_GROUP;
+          break;
+        case HSA_HEAPTYPE_GPU_SCRATCH:
+          *((hsa_region_segment_t*)value) = HSA_REGION_SEGMENT_SPILL;
+          break;
+        default:
+          assert(false &&
+                 "Memory region should only be global, group, or scratch");
+          break;
+      }
+      break;
+    case HSA_REGION_INFO_GLOBAL_FLAGS:
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_SYSTEM:
+          *((uint32_t*)value) = (HSA_REGION_GLOBAL_FLAG_KERNARG |
+                                 HSA_REGION_GLOBAL_FLAG_FINE_GRAINED);
+          break;
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          *((uint32_t*)value) = HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED;
+          break;
+        default:
+          *((uint32_t*)value) = 0;
+          break;
+      }
+      break;
+    case HSA_REGION_INFO_SIZE:
+      *((size_t*)value) = static_cast<size_t>(mem_props_.SizeInBytes);
+      break;
+    case HSA_REGION_INFO_ALLOC_MAX_SIZE:
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+        case HSA_HEAPTYPE_SYSTEM:
+          *((size_t*)value) = max_single_alloc_size_;
+          break;
+        default:
+          *((size_t*)value) = 0;
+      }
+      break;
+    case HSA_REGION_INFO_RUNTIME_ALLOC_ALLOWED:
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_SYSTEM:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          *((bool*)value) = true;
+          break;
+        default:
+          *((bool*)value) = false;
+          break;
+      }
+      break;
+    case HSA_REGION_INFO_RUNTIME_ALLOC_GRANULE:
+      // TODO: remove the hardcoded value.
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_SYSTEM:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          *((size_t*)value) = kPageSize_;
+          break;
+        default:
+          *((size_t*)value) = 0;
+          break;
+      }
+      break;
+    case HSA_REGION_INFO_RUNTIME_ALLOC_ALIGNMENT:
+      // TODO: remove the hardcoded value.
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_SYSTEM:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          *((size_t*)value) = kPageSize_;
+          break;
+        default:
+          *((size_t*)value) = 0;
+          break;
+      }
+      break;
+    default:
+      switch ((hsa_amd_region_info_t)attribute) {
+        case HSA_EXT_AMD_REGION_INFO_HOST_ACCESS:
+          *((bool*)value) =
+              (mem_props_.HeapType == HSA_HEAPTYPE_SYSTEM) ? true : false;
+          break;
+        case HSA_EXT_AMD_REGION_INFO_BASE:
+          *((void**)value) =
+              reinterpret_cast<void*>(mem_props_.VirtualBaseAddress);
+          break;
+        default:
+          return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+          break;
+      }
+      break;
+  }
+  return HSA_STATUS_SUCCESS;
+}
+
+hsa_status_t MemoryRegion::AssignAgent(void* ptr, size_t size,
+                                       const core::Agent& agent,
+                                       hsa_access_permission_t access) {
+  if (fine_grain()) {
+    return HSA_STATUS_SUCCESS;
+  }
+
+  if (std::find(agent.regions().begin(), agent.regions().end(), this) ==
+      agent.regions().end()) {
+    return HSA_STATUS_ERROR_INVALID_AGENT;
+  }
+
+  if (IsLocalMemory()) {
+    HSAuint64 u_ptr = reinterpret_cast<HSAuint64>(ptr);
+    if (u_ptr >= GetBaseAddress() && u_ptr < (GetBaseAddress() + GetSize())) {
+      // TODO: only support agent allocation buffer.
+      if (!MakeKfdMemoryResident(ptr, size)) {
+        return HSA_STATUS_ERROR;
+      }
+
+      return HSA_STATUS_SUCCESS;
+    } else {
+      return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+    }
+  }
+
+  return HSA_STATUS_SUCCESS;
+}
+
+}  // namespace
