@@ -52,7 +52,7 @@
 #include "stddef.h"
 
 namespace amd {
-  /// @brief Tag memory pages for optimized agent access.
+  /// @brief Tag memory pages for optimized component access.
   bool RegisterKfdMemory(void* ptr, size_t length);
 
   /// @brief Untag previoulsy tagged memory pages.

@@ -58,30 +58,19 @@
 namespace core {
 struct AqlPacket {
   union {
-    hsa_kernel_dispatch_packet_t dispatch;
-    hsa_barrier_and_packet_t barrier_and;
-    hsa_barrier_or_packet_t barrier_or;
+    hsa_dispatch_packet_t dispatch;
+    hsa_barrier_packet_t barrier;
     hsa_agent_dispatch_packet_t agent;
   };
-
-  bool IsValid() {
-    const uint8_t packet_type = dispatch.header >> HSA_PACKET_HEADER_TYPE;
-    return (packet_type > HSA_PACKET_TYPE_INVALID &&
-            packet_type < HSA_PACKET_TYPE_COUNT);
-  }
+  bool IsValid() { return (dispatch.header.type & (~1)) != 0; }
 };
 
 /// @brief Class Queue which encapsulate user mode queues and
 /// provides Api to access its Read, Write indices using Acquire,
 /// Release and Relaxed semantics.
-/*
-Queue is intended to be an pure interface class and may be wrapped or replaced
-by tools.
-All funtions other than Convert and public_handle must be virtual.
-*/
 class Queue : public Checked<0xFA3906A679F9DB49> {
  public:
-  Queue() { public_handle_ = Convert(this); }
+  Queue() {}
   virtual ~Queue() {}
 
   /// @brief Returns the handle of Queue's public data type
@@ -99,14 +88,14 @@ class Queue : public Checked<0xFA3906A679F9DB49> {
   /// @param queue Handle of public data type of a queue
   ///
   /// @return Queue * Pointer to the Queue's implementation object
-  static __forceinline Queue* Convert(const hsa_queue_t* queue) {
-    return (queue != NULL)
-               ? reinterpret_cast<Queue*>(
-                     reinterpret_cast<size_t>(queue) -
-                     (reinterpret_cast<size_t>(&(reinterpret_cast<Queue*>(12345)
-                                                     ->amd_queue_.hsa_queue)) -
-                      12345))
-               : NULL;
+  static __forceinline Queue* Convert(hsa_queue_t* queue) {
+    return (queue != NULL) ? reinterpret_cast<Queue*>(
+                                 reinterpret_cast<size_t>(queue) -
+                                 (reinterpret_cast<size_t>(
+                                      &(reinterpret_cast<Queue*>(12345)
+                                            ->amd_queue_.hsa_queue)) -
+                                  12345))
+                           : NULL;
   }
 
   /// @brief Inactivate the queue object. Once inactivate a
@@ -221,13 +210,6 @@ class Queue : public Checked<0xFA3906A679F9DB49> {
 
   // Handle of Amd Queue struct
   amd_queue_t amd_queue_;
-
-  hsa_queue_t* public_handle() const { return public_handle_; }
-
- protected:
-   static void set_public_handle(Queue* ptr, hsa_queue_t* handle) { ptr->do_set_public_handle(handle); }
-   virtual void do_set_public_handle(hsa_queue_t* handle) { public_handle_=handle; }
-   hsa_queue_t* public_handle_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Queue);

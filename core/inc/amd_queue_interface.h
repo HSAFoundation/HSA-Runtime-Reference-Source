@@ -356,7 +356,7 @@ typedef AMD_QUEUE_ALIGN struct amd_queue_s {
   hsa_signal_t queue_inactive_signal;
 
   /// Ensures any following data is in a different cache line to the
-  /// previous fields that are used by the kernel agent packet
+  /// previous fields that are used by the HSA Component packet
   /// processor. Reserved. Must be 0.
   uint32_t reserved5[14];
 

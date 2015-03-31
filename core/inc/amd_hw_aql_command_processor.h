@@ -60,16 +60,15 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
  public:
   // Acquires/releases queue resources and requests HW schedule/deschedule.
   HwAqlCommandProcessor(GpuAgent* agent, size_t req_size_pkts,
-                        HSAuint32 node_id, ScratchInfo& scratch,
-                        core::HsaEventCallback callback, void* err_data);
+                        HSAuint32 node_id, ScratchInfo& scratch);
 
   ~HwAqlCommandProcessor();
 
   /// @brief Indicates if queue is valid or not
-  bool IsValid() const { return valid_; }
+  bool IsValid() const { return valid_ != NULL; }
 
   /// @brief Queue interfaces
-  hsa_status_t Inactivate();
+  hsa_status_t Inactivate() { return HSA_STATUS_SUCCESS; }
 
   /// @brief Atomically reads the Read index of with Acquire semantics
   ///
@@ -192,7 +191,8 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
   /// @brief This operation is illegal
   hsa_signal_value_t WaitRelaxed(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint) {
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint) {
     assert(false);
     return 0;
   }
@@ -200,7 +200,8 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
   /// @brief This operation is illegal
   hsa_signal_value_t WaitAcquire(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint) {
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint) {
     assert(false);
     return 0;
   }
@@ -340,7 +341,10 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
   void AllocRegisteredRingBuffer(uint32_t queue_size_pkts);
   void FreeRegisteredRingBuffer();
 
-  static bool DynamicScratchHandler(hsa_signal_value_t error_code, void* arg);
+  // Converts amd_queue_t.[read|write]_dispatch_id to/from AQL packet count.
+  // Older microcode builds interpret these fields as counts in DWORDs.
+  uint64_t DispatchIdToNumPackets(uint64_t dispatch_id);
+  uint64_t NumPacketsToDispatchId(uint64_t num_pkts);
 
   // AQL packet ring buffer
   void* ring_buf_;
@@ -352,24 +356,18 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
   // Id of the Queue used in communication with thunk
   HSA_QUEUEID queue_id_;
 
-  // Indicates is queue is valid
+  // Bitwise shift to convert dispatch id to/from packet count.
+  // This field is normally zero, except for legacy microcode builds.
+  uint32_t dispatch_id_pkts_shift_;
+
+  // Indicates is queue is valid or inactive
   bool valid_;
-
-  // Indicates if queue is inactive
-  int32_t active_;
-
-  // Cached value of HsaNodeProperties.HSA_CAPABILITY.DoorbellType
-  int doorbell_type_;
 
   // Handle of agent, which queue is attached to
   GpuAgent* agent_;
 
   // Handle of scratch memory descriptor
   ScratchInfo queue_scratch_;
-
-  core::HsaEventCallback errors_callback_;
-
-  void* errors_data_;
 
   // Forbid copying and moving of this object
   DISALLOW_COPY_AND_ASSIGN(HwAqlCommandProcessor);

@@ -69,13 +69,9 @@ bool MemoryDatabase::FindContainingBlock(
   return false;
 }
 
-bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
-                                  bool RegisterWithDrivers) {
+bool MemoryDatabase::RegisterImpl(void* ptr, size_t size) {
   // Check for zero length, NULL pointer, and pointer overflow.
-  if(ptr == NULL)
-    return true;
-
-  if ((size == 0) || ((uintptr_t)ptr + size < (uintptr_t)ptr))
+  if ((size == 0) || (ptr == NULL) || ((uintptr_t)ptr + size < (uintptr_t)ptr))
     return false;
 
   const uintptr_t base = (uintptr_t)ptr;
@@ -86,7 +82,8 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
   // requested block.
   const uintptr_t end_page = GetNextPage(base, size);
 
-  // Provisionally insert the range
+  // Provisionally insert the range - must dismiss Guard in order to keep the
+  // range.
   // std::map::insert will return pair<iterator, bool> data type, if the key is
   // already existing, bool is false.
   // variable: provisional_iterator is an iterator to the element whose "key" is
@@ -97,7 +94,7 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
   // variable: temp_iterator is used for checking requested region overlap.
   auto temp_iterator = provisional_iterator;
 
-  // variable: range is a reference to the value of map
+  // variable: range is a refernce to the value of map
   Range& range = temp_iterator->second;
 
   // Checks for basic validity of the requested range at all exit points
@@ -109,15 +106,49 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
     assert(range.size != 0);
   })
 
-  // If requested region was already registered - only valid case is a second
-  // registration on an hsa allocation region
+  // If requested region was already registered
   if (range.size != 0) {
-    // Requested region is an existing memory allocation registration
-    if ((range.size == size) && (!range.toDriver) && (range.ref_count_ == 1)) {
-      range.Retain();
-      return true;
+    // Requested region is a sub-region of an existing registration
+    if (range.size >= size) return true;
+
+    temp_iterator++;
+    // If requested region extends to overlap the following region, erase the
+    // entry.
+    if (temp_iterator->first < base + size) {
+      requested_ranges_.erase(provisional_iterator);
+      return false;
     }
-    return false;
+
+    // Get first page of new registration
+    uintptr_t new_start_page = GetNextPage(base, range.size);
+
+    // Extend the requested range
+    range.size = size;
+
+    // Check for new pages
+    if (new_start_page < end_page) {
+      // Adjust end of registered page region for overlaps
+      uintptr_t new_end_page;
+      auto end_block =
+          registered_ranges_.find(temp_iterator->second.start_page);
+      if (FindContainingBlock(end_page - 1, end_block)) {
+        new_end_page = end_block->first;
+        end_block->second.Retain();
+      } else {
+        new_end_page = end_page;
+      }
+
+      // Remaining pages
+      if (new_start_page < new_end_page) {
+        size_t new_length = new_end_page - new_start_page;
+        bool status = Runtime::runtime_singleton_->RegisterWithDrivers(
+            (void*)new_start_page, new_length);
+        assert(status && "KFD registration failure!");
+        registered_ranges_[new_start_page] = PageRange(new_length);
+      }
+    }
+
+    return true;
   }
 
   // Requested range is new - check for overlaps
@@ -142,8 +173,6 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
   }
   // Fill out new range
   range.size = size;
-  range.ref_count_ = 1;
-  range.toDriver = RegisterWithDrivers;
 
   // Get last page block of prior region
   // Start at first block of next region and work back
@@ -176,16 +205,13 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
 
   // Remaining pages
   // Register new space whose size is equal to new_length with KFD driver and
-  // establish the corresponding mapping in registered_ranges_.
+  // establishs the corresponding mapping in registered_ranges_.
   if (new_start_page < new_end_page) {
     size_t new_length = new_end_page - new_start_page;
-    if (RegisterWithDrivers) {
-      bool ret = Runtime::runtime_singleton_->RegisterWithDrivers(
-          (void*)new_start_page, new_length);
-      assert(ret && "KFD registration failure!");
-    }
-    registered_ranges_[new_start_page] =
-        PageRange(new_length, RegisterWithDrivers);
+    bool ret = Runtime::runtime_singleton_->RegisterWithDrivers(
+        (void*)new_start_page, new_length);
+    assert(ret && "KFD registration failure!");
+    registered_ranges_[new_start_page] = PageRange(new_length);
     if (range.start_page == 0)
       range.start_page = new_start_page;  // When start_page of base is 0, this
                                           // will override the guard element.
@@ -194,20 +220,17 @@ bool MemoryDatabase::RegisterImpl(void* ptr, size_t size,
   return true;
 }
 
-bool MemoryDatabase::DeregisterImpl(void* ptr) {
-  if (ptr == NULL) return true;
+void MemoryDatabase::DeregisterImpl(void* ptr) {
+  if (ptr == NULL) return;
 
   uintptr_t base = (uintptr_t)ptr;
 
-  // Find out if value of base if an existing key of requested_ranges_, if it
+  // Find out if valud of base if an existing key of requested_ranges_, if it
   // is, stores the corresponding iterator to variable of
   // requested_range_iterator.
   auto requested_range_iterator = requested_ranges_.find(base);
   // If ptr is not in requested_ranges_, return.
-  if (requested_range_iterator == requested_ranges_.end()) return false;
-
-  // Check for last release of a hsa memory allocator region
-  if (!requested_range_iterator->second.Release()) return true;
+  if (requested_range_iterator == requested_ranges_.end()) return;
 
   // Calculate the ending address of the being deleted block and stores it to
   // new variable of end_of_range.
@@ -227,10 +250,8 @@ bool MemoryDatabase::DeregisterImpl(void* ptr) {
     auto temp = registered_range_iterator;
     temp++;
     if (release_from_devices) {
-      if (registered_range_iterator->second.toDriver) {
-        Runtime::runtime_singleton_->DeregisterWithDrivers(
-            (void*)registered_range_iterator->first);
-      }
+      Runtime::runtime_singleton_->DeregisterWithDrivers(
+          (void*)registered_range_iterator->first);
       registered_ranges_.erase(registered_range_iterator);
     }
     registered_range_iterator = temp;
@@ -240,6 +261,5 @@ bool MemoryDatabase::DeregisterImpl(void* ptr) {
 
   // Removes the corresponding entry from the requested_ranges_.
   requested_ranges_.erase(requested_range_iterator);
-  return true;
 }
 }  // namespace core

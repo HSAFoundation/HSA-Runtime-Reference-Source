@@ -53,7 +53,6 @@
 
 #include "core/inc/runtime.h"
 #include "core/inc/agent.h"
-#include "core/inc/blit.h"
 #include "core/inc/signal.h"
 #include "core/inc/thunk.h"
 #include "core/util/small_heap.h"
@@ -74,7 +73,6 @@ class GpuAgentInt : public core::Agent {
   virtual hsa_amd_memory_type_t memory_type() const = 0;
   virtual void TranslateTime(core::Signal* signal,
                              hsa_amd_dispatch_time_t& time) = 0;
-  virtual HSAuint32 node_id() const = 0;
 };
 
 class GpuAgent : public GpuAgentInt {
@@ -84,13 +82,11 @@ class GpuAgent : public GpuAgentInt {
 
   ~GpuAgent();
 
-  void RegisterMemoryProperties(core::MemoryRegion& region);
+  void RegisterMemoryProperties(const HsaMemoryProperties properties);
 
   hsa_status_t IterateRegion(hsa_status_t (*callback)(hsa_region_t region,
                                                       void* data),
                              void* data) const;
-
-  hsa_status_t DmaCopy(void* dst, const void* src, size_t size);
 
   hsa_status_t GetInfo(hsa_agent_info_t attribute, void* value) const;
 
@@ -103,53 +99,34 @@ class GpuAgent : public GpuAgentInt {
   /// @param callback Callback function to register in case Quee
   /// encounters an error
   ///
-  /// @param data Application data that is passed to @p callback on every
-  /// iteration.May be NULL.
-  ///
-  /// @param private_segment_size Hint indicating the maximum
-  /// expected private segment usage per work - item, in bytes.There may
-  /// be performance degradation if the application places a Kernel
-  /// Dispatch packet in the queue and the corresponding private segment
-  /// usage exceeds @p private_segment_size.If the application does not
-  /// want to specify any particular value for this argument, @p
-  /// private_segment_size must be UINT32_MAX.If the queue does not
-  /// support Kernel Dispatch packets, this argument is ignored.
-  ///
-  /// @param group_segment_size Hint indicating the maximum expected
-  /// group segment usage per work - group, in bytes.There may be
-  /// performance degradation if the application places a Kernel Dispatch
-  /// packet in the queue and the corresponding group segment usage
-  /// exceeds @p group_segment_size.If the application does not want to
-  /// specify any particular value for this argument, @p
-  /// group_segment_size must be UINT32_MAX.If the queue does not
-  /// support Kernel Dispatch packets, this argument is ignored.
+  /// @param service_queue Pointer to a service queue
   ///
   /// @parm queue Output parameter updated with a pointer to the
   /// queue being created
   ///
   /// @return hsa_status
-  hsa_status_t QueueCreate(size_t size, hsa_queue_type_t queue_type,
-                           core::HsaEventCallback event_callback, void* data,
-                           uint32_t private_segment_size,
-                           uint32_t group_segment_size, core::Queue** queue);
+  hsa_status_t QueueCreate(size_t size, hsa_queue_type_t type,
+                           core::HsaEventCallback callback,
+                           const hsa_queue_t* service_queue,
+                           core::Queue** queue);
 
-  void AcquireQueueScratch(ScratchInfo& scratch) {
-    if (scratch.size == 0) {
-      scratch.size = queue_scratch_len_;
-      scratch.size_per_thread = scratch_per_thread_;
-    }
-    ScopedAcquire<KernelMutex> lock(&sclock_);
-    scratch.queue_base = scratch_pool_.alloc(scratch.size);
+  void AcquireQueueScratch(ScratchInfo &scratch)
+  {
+	  if(scratch.size==0)
+	  {
+		  scratch.size=queue_scratch_len_;
+		  scratch.size_per_thread=scratch_per_thread_;
+	  }
+	  ScopedAcquire<KernelMutex> lock(&sclock_);
+	  scratch.queue_base = scratch_pool_.alloc(scratch.size);
   }
 
   void ReleaseQueueScratch(void* base) {
-    ScopedAcquire<KernelMutex> lock(&sclock_);
-    scratch_pool_.free(base);
+	  ScopedAcquire<KernelMutex> lock(&sclock_);
+	  scratch_pool_.free(base);
   }
 
   void TranslateTime(core::Signal* signal, hsa_amd_dispatch_time_t& time);
-
-  uint16_t GetMicrocodeVersion() const;
 
   bool memory_type(hsa_amd_memory_type_t type);
 
@@ -164,9 +141,7 @@ class GpuAgent : public GpuAgentInt {
 
   __forceinline HSAuint32 node_id() const { return node_id_; }
 
-  __forceinline const HsaNodeProperties& properties() const {
-    return properties_;
-  }
+  __forceinline HsaNodeProperties properties() const { return properties_; }
 
   __forceinline size_t num_cache() const { return cache_props_.size(); }
 
@@ -174,12 +149,9 @@ class GpuAgent : public GpuAgentInt {
     return cache_props_[idx];
   }
 
-  const std::vector<const core::MemoryRegion*>& regions() const {
-    return regions_;
-  }
+  uint16_t GetMicrocodeVersion() const;
 
  private:
-  static const uint32_t minAqlSize_ = 0x1000;   // 4KB min
   static const uint32_t maxAqlSize_ = 0x20000;  // 8MB max
 
   void SyncClocks();
@@ -202,13 +174,9 @@ class GpuAgent : public GpuAgentInt {
 
   size_t scratch_per_thread_;
 
-  core::Blit* blit_;
-
   KernelMutex lock_, sclock_;
 
   HsaClockCounters t0_, t1_;
-
-  std::vector<const core::MemoryRegion*> regions_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuAgent);
 };

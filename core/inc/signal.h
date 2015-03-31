@@ -74,14 +74,13 @@ struct AmdHsaSignal {
   uint64_t event_mailbox_ptr;  // For event based notification, forwarded by KFD
   uint32_t event_id;           // For event based notification, forwarded by KFD
   uint32_t reserved;           // For padding
-  uint64_t
-      start_ts;     // Start timestamp for associated AQL packet, when profiled
-  uint64_t end_ts;  // End timestamp for associated AQL packet, when profiled
+  uint64_t start_ts;  // Start timestamp for associated AQL packet, when profiled
+  uint64_t end_ts;    // End timestamp for associated AQL packet, when profiled
 };
 
 /// @brief An abstract base class which helps implement the public hsa_signal_t
 /// type (an opaque handle) and its associated APIs. At its core, signal uses
-/// a 32 or 64 bit value. This value can be waitied on or signaled atomically
+/// a 32 or 64 bit value. This value can be waitied open or signaled atomically
 /// using specified memory ordering semantics.
 class Signal : public Checked<0x71FCCA6A3D5D5276> {
  public:
@@ -89,40 +88,31 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
   explicit Signal(hsa_signal_value_t initial_value) {
     signal_.type = kHsaSignalInvalid;
     signal_.value = initial_value;
-    invalid_ = false;
-    waiting_ = 0;
   }
 
   virtual ~Signal() { signal_.type = kHsaSignalInvalid; }
 
-  bool IsValid() const {
-    if (CheckedType::IsValid() && !invalid_) return true;
-    return false;
-  }
-
   /// @brief Converts from this implementation class to the public
   /// hsa_signal_t type - an opaque handle.
   static __forceinline hsa_signal_t Convert(Signal* signal) {
-    hsa_signal_t signal_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&signal->signal_))};
-    return signal_handle;
+    return static_cast<hsa_signal_t>(
+        reinterpret_cast<uintptr_t>(&signal->signal_));
   }
 
   /// @brief Converts from this implementation class to the public
   /// hsa_signal_t type - an opaque handle.
   static __forceinline const hsa_signal_t Convert(const Signal* signal) {
-    hsa_signal_t signal_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(&signal->signal_))};
-    return signal_handle;
+    return static_cast<hsa_signal_t>(
+        reinterpret_cast<uintptr_t>(&signal->signal_));
   }
 
   /// @brief Converts from public hsa_signal_t type (an opaque handle) to
   /// this implementation class object.
   static __forceinline Signal* Convert(hsa_signal_t signal) {
-    return (signal.handle == 0)
+    return (signal == NULL)
                ? NULL
                : reinterpret_cast<Signal*>(
-                     static_cast<size_t>(signal.handle) -
+                     static_cast<size_t>(signal) -
                      (reinterpret_cast<size_t>(
                           &(reinterpret_cast<Signal*>(12345)->signal_)) -
                       12345));
@@ -140,11 +130,11 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
   virtual hsa_signal_value_t WaitRelaxed(hsa_signal_condition_t condition,
                                          hsa_signal_value_t compare_value,
                                          uint64_t timeout,
-                                         hsa_wait_state_t wait_hint) = 0;
+                                         hsa_wait_expectancy_t wait_hint) = 0;
   virtual hsa_signal_value_t WaitAcquire(hsa_signal_condition_t condition,
                                          hsa_signal_value_t compare_value,
                                          uint64_t timeout,
-                                         hsa_wait_state_t wait_hint) = 0;
+                                         hsa_wait_expectancy_t wait_hint) = 0;
 
   virtual void AndRelaxed(hsa_signal_value_t value) = 0;
   virtual void AndAcquire(hsa_signal_value_t value) = 0;
@@ -196,51 +186,14 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
   /// Returns NULL for DefaultEvent Type.
   virtual HsaEvent* EopEvent() = 0;
 
-  /// @brief Waits until any signal in the list satisfies its condition or
-  /// timeout is reached.
-  /// Returns the index of a satisfied signal.  Returns -1 on timeout and
-  /// errors.
-  static uint32_t WaitAny(uint32_t signal_count, hsa_signal_t* hsa_signals,
-                          hsa_signal_condition_t* conds,
-                          hsa_signal_value_t* values, uint64_t timeout_hint,
-                          hsa_wait_state_t wait_hint,
-                          hsa_signal_value_t* satisfying_value);
-
-  /// @brief Allows special case interaction with signal destruction cleanup.
-  void IncWaiting() { atomic::Increment(&waiting_); }
-  void DecWaiting() { atomic::Decrement(&waiting_); }
-
   /// @brief Structure which defines key signal elements like type and value.
   /// Address of this struct is used as a value for the opaque handle of type
   /// hsa_signal_t provided to the public API.
   AmdHsaSignal signal_;
 
- protected:
-  /// @variable  Indicates if signal is valid or not.
-  volatile bool invalid_;
-
-  /// @variable Indicates number of runtime threads waiting on this signal.
-  /// Value of zero means no waits.
-  volatile uint32_t waiting_;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(Signal);
 };
-
-struct hsa_signal_handle {
-  hsa_signal_t signal;
-
-  hsa_signal_handle() {}
-  hsa_signal_handle(hsa_signal_t Signal) { signal = Signal; }
-  operator hsa_signal_t() { return signal; }
-  Signal* operator->() { return core::Signal::Convert(signal); }
-};
-static_assert(
-    sizeof(hsa_signal_handle) == sizeof(hsa_signal_t),
-    "hsa_signal_handle and hsa_signal_t must have identical binary layout.");
-static_assert(
-    sizeof(hsa_signal_handle[2]) == sizeof(hsa_signal_t[2]),
-    "hsa_signal_handle and hsa_signal_t must have identical binary layout.");
 
 }  // namespace core
 #endif  // header guard

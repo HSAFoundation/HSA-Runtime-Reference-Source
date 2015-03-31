@@ -67,11 +67,19 @@ namespace core {
 /// signaling.
 class InterruptSignal : public Signal {
  public:
-  static HsaEvent* CreateEvent();
-
-  explicit InterruptSignal(hsa_signal_value_t initial_value, HsaEvent* use_event=NULL);
+  explicit InterruptSignal(hsa_signal_value_t initial_value);
 
   ~InterruptSignal();
+
+  /// @brief Factory method to create an instance of this class.
+  /// @param initial_value(input), Initial value of the signal.
+  /// @param num_consumers(input), Number of agents that can wait on
+  /// this signal.
+  /// @param consumers(input), List of agents that might consume (wait on)
+  /// the signal. Must match the num_consumers param.
+  static InterruptSignal* Create(hsa_signal_value_t initial_value,
+                                 uint32_t num_consumers,
+                                 const hsa_agent_t* consumers);
 
   // Below are various methods corresponding to the APIs, which load/store the
   // signal value or modify the existing signal value automically and with
@@ -87,11 +95,13 @@ class InterruptSignal : public Signal {
 
   hsa_signal_value_t WaitRelaxed(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint);
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint);
 
   hsa_signal_value_t WaitAcquire(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint);
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint);
 
   void AndRelaxed(hsa_signal_value_t value);
 
@@ -170,6 +180,12 @@ class InterruptSignal : public Signal {
  private:
   /// @variable KFD event on which the interrupt signal is based on.
   HsaEvent* event_;
+
+  /// @variable Indicates that signal is destroyed.
+  volatile bool invalid_;
+
+  /// @variable Number of threads currently waiting on this signal.
+  volatile uint32_t waiting_;
 
   DISALLOW_COPY_AND_ASSIGN(InterruptSignal);
 };

@@ -50,41 +50,44 @@
 #include "core/util/utils.h"
 
 namespace core {
-HostQueue::HostQueue(hsa_region_t region, uint32_t ring_size,
-                     hsa_queue_type_t type, uint32_t features,
-                     hsa_signal_t doorbell_signal)
-    : size_(ring_size), active_(false) {
-  HSA::hsa_memory_register(this, sizeof(HostQueue));
+HostQueue::HostQueue(uint32_t ring_size) : size_(ring_size), active_(false) {
+  hsa_memory_register(this, sizeof(HostQueue));
 
-  const size_t queue_buffer_size = size_ * sizeof(AqlPacket);
-  if (HSA_STATUS_SUCCESS !=
-      HSA::hsa_memory_allocate(region, queue_buffer_size, &ring_)) {
-    return;
-  }
+  ring_ = _aligned_malloc(size_ * sizeof(hsa_agent_dispatch_packet_t),
+                          kRingAlignment);
+  if (ring_ == NULL) return;
+  hsa_memory_register(ring_, size_ * sizeof(hsa_agent_dispatch_packet_t));
+  MAKE_NAMED_SCOPE_GUARD(ring_guard, [&]() {
+    hsa_memory_deregister(ring_, size_ * sizeof(hsa_agent_dispatch_packet_t));
+    _aligned_free(ring_);
+  });
 
-  assert(IsMultipleOf(ring_, kRingAlignment));
-  assert(ring_ != NULL);
+  if (hsa_signal_create(-1, 0, NULL, &signal_) != HSA_STATUS_SUCCESS) return;
 
-  amd_queue_.hsa_queue.base_address = ring_;
+  amd_queue_.hsa_queue.base_address = reinterpret_cast<uint64_t>(ring_);
   amd_queue_.hsa_queue.size = size_;
-  amd_queue_.hsa_queue.doorbell_signal = doorbell_signal_;
-  amd_queue_.hsa_queue.id = Runtime::runtime_singleton_->GetQueueId();
-  amd_queue_.hsa_queue.type = type;
-  amd_queue_.hsa_queue.features = features;
 #ifdef HSA_LARGE_MODEL
   amd_queue_.is_ptr64 = 1;
 #else
   amd_queue_.is_ptr64 = 0;
 #endif
   amd_queue_.write_dispatch_id = amd_queue_.read_dispatch_id = 0;
+  amd_queue_.hsa_queue.doorbell_signal = signal_;
+  amd_queue_.hsa_queue.service_queue = NULL;
+  amd_queue_.hsa_queue.id = Runtime::runtime_singleton_->GetQueueId();
+  amd_queue_.hsa_queue.queue_type = HSA_QUEUE_TYPE_MULTI;
+  amd_queue_.hsa_queue.queue_features = HSA_QUEUE_FEATURE_AGENT_DISPATCH;
   amd_queue_.enable_profiling = 0;
 
   active_ = true;
+  ring_guard.Dismiss();
 }
 
 HostQueue::~HostQueue() {
-  HSA::hsa_memory_free(ring_);
-  HSA::hsa_memory_deregister(this, sizeof(HostQueue));
+  hsa_signal_destroy(signal_);
+  hsa_memory_deregister(ring_, size_ * sizeof(hsa_agent_dispatch_packet_t));
+  _aligned_free(ring_);
+  hsa_memory_deregister(this, sizeof(HostQueue));
 }
 
 }  // namespace core

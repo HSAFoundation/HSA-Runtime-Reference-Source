@@ -26,7 +26,7 @@ The 64-bit target is libhsa-runtime64.so
 
 ### Package Dependencies
 
-The following support packages are requried to succesfully build the runtime:
+The following support packages are requried to succesfully build the runtime and sample:
 
 * libelf-dev
 * g++
@@ -36,11 +36,11 @@ The following support packages are requried to succesfully build the runtime:
 
 http://www.hsafoundation.com/standards/
 
-HSA Runtime Specification 1.0
+HSA Runtime Specification 1.0 Provisional - http://www.hsafoundation.com/?ddownload=4946
 
-HSA Programmer Reference Manual Specification 1.0
+HSA Programmer Reference Manual Specification 1.0 Provisional - http://www.hsafoundation.com/?ddownload=4945
 
-HSA Platform System Architecture Specification 1.0
+HSA Platform System Architecture Specification 1.0 Provisional - http://www.hsafoundation.com/?ddownload=4944
 
 ### Runtime Design overview
 
@@ -106,31 +106,6 @@ interrupt_signal.h(cpp)
 hsa_ext_private_amd.h(cpp)
 
 The device specific layer contains implementations of the C++ interface classes which implement HSA functionality for AMD 7000 series APUs.
-
-#### Unimplemented functionality
-
-* The following queries are not implemented:
-<<<<<<< HEAD
-  ** hsa_code_symbol_get_info: HSA_CODE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_CODE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-  ** hsa_executable_symbol_get_info: HSA_EXECUTABLE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_OBJECT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-  ** hsa_isa_get_info: HSA_ISA_INFO_CALL_CONVENTION_COUNT, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONT_SIZE, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONTS_PER_COMPUTE_UNIT
-=======
-1) hsa_code_symbol_get_info: HSA_CODE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_CODE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-2) hsa_executable_symbol_get_info: HSA_EXECUTABLE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_OBJECT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-3) hsa_isa_get_info: HSA_ISA_INFO_CALL_CONVENTION_COUNT, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONT_SIZE, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONTS_PER_COMPUTE_UNIT
->>>>>>> f2b9ed11525cafbebd079fd8deff41450855afc0
-
-#### Known Issues
-
-* Signals do not support multiple concurrent HOST waiters unless the the environment variable HSA_ENABLE_INTTERUPT=0.
-* hsa_agent_get_exception_policies is not implemented.
-* Image import/export/copy/fill only support image created with memory from host accessible region.
-* Coarse grain memory usage may claim one user mode queue internally to do memory copy and reduce the number of max queue that can be created.
-* hsa_memory_allocate can an return invalid status when an allocation size of 0 bytes is specified.
-* hsa_system_get_extension_table is not implemented for HSA_EXTENSION_AMD_PROFILER.
-* hsa_ext_image_copy only support source and destination with the same image format. It does not support SRGBA to linear RGBA conversion and vice versa.
-* Acquire and release only synchronize on segment of the operation, matchng SysArch 1.0 provisonal.
-* Code objects can only be loaded once.
 
 ### Disclaimer
 

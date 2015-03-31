@@ -47,43 +47,27 @@
 #include "core/inc/interrupt_signal.h"
 
 namespace core {
-
-HsaEvent* InterruptSignal::CreateEvent()
-{
+InterruptSignal::InterruptSignal(hsa_signal_value_t initial_value)
+    : Signal(initial_value), invalid_(false), waiting_(0) {
   HsaEventDescriptor event_descriptor;
 #ifdef __linux__
   event_descriptor.EventType = HSA_EVENTTYPE_SIGNAL;
 #else
   event_descriptor.EventType = HSA_EVENTTYPE_QUEUE_EVENT;
 #endif
-  event_descriptor.SyncVar.SyncVar.UserData = NULL;
+  event_descriptor.SyncVar.SyncVar.UserData = (void*)&signal_.value;
   event_descriptor.SyncVar.SyncVarSize = sizeof(hsa_signal_value_t);
   event_descriptor.NodeId = 0;
-  HsaEvent* ret=NULL;
-  hsaKmtCreateEvent(&event_descriptor, false, false, &ret);
-  return ret;
-}
-
-InterruptSignal::InterruptSignal(hsa_signal_value_t initial_value, HsaEvent* use_event)
-    : Signal(initial_value) {
-  
-  if(use_event!=NULL)
-    event_=use_event;
-  else
-    event_=CreateEvent();
-
-  if(event_!=NULL)
-  {
-    signal_.event_id = event_->EventId;
-    signal_.event_mailbox_ptr = event_->EventData.HWData2;
-  }
-  else
-  {
-    signal_.event_id = 0;
-    signal_.event_mailbox_ptr = 0;
+  if (hsaKmtCreateEvent(&event_descriptor, false, false, &event_) !=
+      HSAKMT_STATUS_SUCCESS) {
+    event_ = NULL;
+    return;
   }
   signal_.type = kHsaSignalAmd;
-  HSA::hsa_memory_register(this, sizeof(InterruptSignal));
+  signal_.event_id = event_->EventId;
+  signal_.event_mailbox_ptr = event_->EventData.HWData2;
+
+  hsa_memory_register(this, sizeof(InterruptSignal));
 }
 
 InterruptSignal::~InterruptSignal() {
@@ -92,7 +76,18 @@ InterruptSignal::~InterruptSignal() {
   while (waiting_ != 0)
     ;
   hsaKmtDestroyEvent(event_);
-  HSA::hsa_memory_deregister(this, sizeof(InterruptSignal));
+  hsa_memory_deregister(this, sizeof(InterruptSignal));
+}
+
+InterruptSignal* InterruptSignal::Create(hsa_signal_value_t initial_value,
+                                         uint32_t num_consumers,
+                                         const hsa_agent_t* consumers) {
+  InterruptSignal* signal = new InterruptSignal(initial_value);
+  if (signal != NULL) {
+    if (signal->EopEvent() != NULL) return signal;
+  }
+  delete signal;
+  return NULL;
 }
 
 hsa_signal_value_t InterruptSignal::LoadRelaxed() {
@@ -117,13 +112,9 @@ void InterruptSignal::StoreRelease(hsa_signal_value_t value) {
 
 hsa_signal_value_t InterruptSignal::WaitRelaxed(
     hsa_signal_condition_t condition, hsa_signal_value_t compare_value,
-    uint64_t timeout, hsa_wait_state_t wait_hint) {
+    uint64_t timeout, hsa_wait_expectancy_t wait_hint) {
   uint32_t prior = atomic::Increment(&waiting_);
-
-  // assert(prior == 0 && "Multiple waiters on interrupt signal!");
-  // Allow only the first waiter to sleep (temporary, known to be bad).
-  if (prior != 0) wait_hint = HSA_WAIT_STATE_ACTIVE;
-
+  assert(prior == 0 && "Multiple waiters on interrupt signal!");
   MAKE_SCOPE_GUARD([&]() { atomic::Decrement(&waiting_); });
 
   int64_t value;
@@ -133,11 +124,11 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
   const uint64_t kMaxElapsed = 800000;
 
   uint64_t hsa_freq;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &hsa_freq);
+  hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &hsa_freq);
   const float invFreq = 1000.0f / hsa_freq;  // clock period in ms
 
   uint64_t start_time, sys_time;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
+  hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
 
   bool condition_met = false;
   while (true) {
@@ -146,19 +137,19 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
     value = atomic::Load(&signal_.value, std::memory_order_relaxed);
 
     switch (condition) {
-      case HSA_SIGNAL_CONDITION_EQ: {
+      case HSA_EQ: {
         condition_met = (value == compare_value);
         break;
       }
-      case HSA_SIGNAL_CONDITION_NE: {
+      case HSA_NE: {
         condition_met = (value != compare_value);
         break;
       }
-      case HSA_SIGNAL_CONDITION_GTE: {
+      case HSA_GTE: {
         condition_met = (value >= compare_value);
         break;
       }
-      case HSA_SIGNAL_CONDITION_LT: {
+      case HSA_LT: {
         condition_met = (value < compare_value);
         break;
       }
@@ -169,12 +160,12 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
 
     uint64_t time = __rdtsc();
     if (time - fast_start_time > kMaxElapsed) {
-      HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
+      hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
       if (sys_time - start_time > timeout) {
         value = atomic::Load(&signal_.value, std::memory_order_relaxed);
         return hsa_signal_value_t(value);
       }
-      if (wait_hint != HSA_WAIT_STATE_ACTIVE) {
+      if (wait_hint != HSA_WAIT_EXPECTANCY_SHORT) {
         uint32_t wait_ms;
         if (timeout == -1)
           wait_ms = uint32_t(-1);
@@ -188,7 +179,7 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
 
 hsa_signal_value_t InterruptSignal::WaitAcquire(
     hsa_signal_condition_t condition, hsa_signal_value_t compare_value,
-    uint64_t timeout, hsa_wait_state_t wait_hint) {
+    uint64_t timeout, hsa_wait_expectancy_t wait_hint) {
   hsa_signal_value_t ret =
       WaitRelaxed(condition, compare_value, timeout, wait_hint);
   std::atomic_thread_fence(std::memory_order_acquire);

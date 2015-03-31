@@ -44,24 +44,80 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifndef HSA_RUNTIME_CORE_INC_HSA_API_TRACE_INT_H
-#define HSA_RUNTIME_CORE_INC_HSA_API_TRACE_INT_H
+#ifndef HSA_RUNTIME_CORE_INC_HSA_CODE_UNIT_H_
+#define HSA_RUNTIME_CORE_INC_HSA_CODE_UNIT_H_
 
-#include "inc/hsa_api_trace.h"
-#include "core/inc/hsa_internal.h"
+#include <gelf.h>
+
+#include "core/inc/runtime.h"
 
 namespace core {
-struct ApiTable {
-  ::ApiTable table;
-  ExtTable extension_backup;
 
-  ApiTable();
-  void Reset();
-  void LinkExts(ExtTable* ptr);
+typedef char byte_t;
+typedef uint32_t offset_t;
+
+struct HsaCodeEntity {
+  HsaCodeEntity(char *_name, offset_t _offset): name(_name), offset(_offset) {}
+
+  char *name;
+  offset_t offset;
 };
 
-extern ApiTable hsa_api_table_;
-extern ApiTable hsa_internal_api_table_;
-}
+class HsaCodeUnit {
+public:
+  HsaCodeUnit(): code_section_(NULL) {}
+  ~HsaCodeUnit() {}
 
-#endif
+  static hsa_amd_code_unit_t Handle(HsaCodeUnit *hcu) {
+    return reinterpret_cast<hsa_amd_code_unit_t>(hcu);
+  }
+
+  static HsaCodeUnit *Object(hsa_amd_code_unit_t hcu) {
+    return reinterpret_cast<HsaCodeUnit*>(hcu);
+  }
+
+  static hsa_status_t Create(
+    HsaCodeUnit **hcu,
+    hsa_runtime_caller_t caller,
+    const hsa_agent_t *agents,
+    size_t agent_count,
+    void *serialized_code_unit,
+    size_t serialized_code_unit_size,
+    const char *options,
+    hsa_ext_symbol_value_callback_t symbol_value
+  );
+
+  static hsa_status_t Destroy(HsaCodeUnit *hcu);
+
+  hsa_status_t Create(
+    hsa_runtime_caller_t caller,
+    const hsa_agent_t *agents,
+    size_t agent_count,
+    void *serialized_code_unit,
+    size_t serialized_code_unit_size,
+    const char *options,
+    hsa_ext_symbol_value_callback_t symbol_value
+  );
+
+  hsa_status_t Destroy();
+
+  hsa_status_t GetInfo(
+    hsa_amd_code_unit_info_t attribute, uint32_t index, void *value
+  );
+
+private:
+  hsa_status_t ProcessSymtab(
+    Elf *elf_mem, const GElf_Shdr &eshdr, Elf_Scn *escn
+  );
+
+  hsa_status_t ProcessText(
+    Elf *elf_mem, const GElf_Shdr &eshdr, Elf_Scn *escn
+  );
+
+  byte_t *code_section_;
+  std::vector<HsaCodeEntity> code_entities_;
+};
+
+} // namespace core
+
+#endif // HSA_RUNTIME_CORE_INC_HSA_CODE_UNIT_H_

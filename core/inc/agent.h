@@ -60,50 +60,33 @@
 #include "core/util/utils.h"
 
 namespace core {
-typedef void (*HsaEventCallback)(hsa_status_t status, hsa_queue_t* source,
-                                 void* data);
+typedef void (*HsaEventCallback)(hsa_status_t status, hsa_queue_t* queue);
 
 class MemoryRegion;
 
-/*
-Agent is intended to be an pure interface class and may be wrapped or replaced
-by tools.
-All funtions other than Convert, device_type, and public_handle must be virtual.
-*/
 class Agent : public Checked<0xF6BC25EB17E6F917> {
  public:
-  // Lightweight RTTI for vendor specific implementations.
-  enum DeviceType { kAmdGpuDevice = 0, kAmdCpuDevice = 1, kUnknownDevice = 2 };
+  // Light weight RTTI for vendor specific implementations.
+  enum DeviceType { kAmdGpuDevice, kAmdCpuDevice, kUnknownDevice };
 
-  explicit Agent(DeviceType type) : device_type_(uint32_t(type)) {
-    public_handle_ = Convert(this);
-  }
-  explicit Agent(uint32_t type) : device_type_(type) {
-    public_handle_ = Convert(this);
-  }
+  explicit Agent(DeviceType type) : device_type_(type) {}
 
-  virtual ~Agent() {}
+  virtual ~Agent() {
+    assert((regions_.size() == 0) && ("Region list is not released properly"));
+  }
 
   // Convert this object into hsa_agent_t.
   static __forceinline hsa_agent_t Convert(Agent* agent) {
-    const hsa_agent_t agent_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(agent))};
-    return agent_handle;
+    return static_cast<hsa_agent_t>(reinterpret_cast<uintptr_t>(agent));
   }
 
   static __forceinline const hsa_agent_t Convert(const Agent* agent) {
-    const hsa_agent_t agent_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(agent))};
-    return agent_handle;
+    return static_cast<hsa_agent_t>(reinterpret_cast<uintptr_t>(agent));
   }
 
   // Convert hsa_agent_t into Agent *.
   static __forceinline Agent* Convert(hsa_agent_t agent) {
-    return reinterpret_cast<Agent*>(agent.handle);
-  }
-
-  virtual hsa_status_t DmaCopy(void* dst, const void* src, size_t size) {
-    return HSA_STATUS_ERROR;
+    return reinterpret_cast<Agent*>(agent);
   }
 
   virtual hsa_status_t IterateRegion(
@@ -111,41 +94,29 @@ class Agent : public Checked<0xF6BC25EB17E6F917> {
       void* data) const = 0;
 
   virtual hsa_status_t QueueCreate(size_t size, hsa_queue_type_t queue_type,
-                                   HsaEventCallback event_callback, void* data,
-                                   uint32_t private_segment_size,
-                                   uint32_t group_segment_size,
+                                   HsaEventCallback event_callback,
+                                   const hsa_queue_t* service_queue,
                                    Queue** queue) = 0;
 
   // Translate vendor specific agent properties into HSA agent attribute.
   virtual hsa_status_t GetInfo(hsa_agent_info_t attribute,
                                void* value) const = 0;
 
-  virtual const std::vector<const core::MemoryRegion*>& regions() const = 0;
+  __forceinline const std::vector<const MemoryRegion*>& regions() const {
+    return regions_;
+  }
 
-  // For lightweight RTTI
-  __forceinline uint32_t device_type() const { return device_type_; }
-
-  __forceinline hsa_agent_t public_handle() const { return public_handle_; }
+  __forceinline DeviceType device_type() const { return device_type_; }
 
  protected:
-  // Intention here is to have a polymorphic update procedure for public_handle_
-  // which is callable on any Agent* but only from some class dervied from
-  // Agent*.  do_set_public_handle should remain protected or private in all
-  // derived types.
-  static __forceinline void set_public_handle(Agent* agent,
-                                              hsa_agent_t handle) {
-    agent->do_set_public_handle(handle);
-  }
-  virtual void do_set_public_handle(hsa_agent_t handle) {
-    public_handle_ = handle;
-  }
-  hsa_agent_t public_handle_;
+  // Memory regions accessible by this component.
+  std::vector<const MemoryRegion*> regions_;
 
  private:
   // Forbid copying and moving of this object
   DISALLOW_COPY_AND_ASSIGN(Agent);
 
-  const uint32_t device_type_;
+  const DeviceType device_type_;
 };
 }  // namespace core
 

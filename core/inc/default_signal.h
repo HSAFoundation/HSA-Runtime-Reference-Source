@@ -79,11 +79,13 @@ class DefaultSignal : public Signal {
 
   hsa_signal_value_t WaitRelaxed(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint);
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint);
 
   hsa_signal_value_t WaitAcquire(hsa_signal_condition_t condition,
                                  hsa_signal_value_t compare_value,
-                                 uint64_t timeout, hsa_wait_state_t wait_hint);
+                                 uint64_t timeout,
+                                 hsa_wait_expectancy_t wait_hint);
 
   void AndRelaxed(hsa_signal_value_t value);
 
@@ -160,6 +162,13 @@ class DefaultSignal : public Signal {
   void operator delete(void* ptr) { free(ptr); }
 
  private:
+  /// @variable  Indicates if signal is valid or not.
+  volatile bool invalid_;
+
+  /// @variable Indicates number of threads waiting on this signal.
+  /// Value of zero means no waits.
+  volatile uint32_t waiting_;
+
   DISALLOW_COPY_AND_ASSIGN(DefaultSignal);
 };
 

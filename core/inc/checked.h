@@ -56,8 +56,6 @@ namespace core {
 template <uint64_t code>
 class Checked {
  public:
-  typedef Checked<code> CheckedType;
-
   Checked() { object_ = uintptr_t(this) ^ uintptr_t(code); }
   Checked(const Checked&) { object_ = uintptr_t(this) ^ uintptr_t(code); }
   Checked(Checked&&) { object_ = uintptr_t(this) ^ uintptr_t(code); }

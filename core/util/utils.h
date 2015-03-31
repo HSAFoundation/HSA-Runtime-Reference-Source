@@ -72,7 +72,6 @@ static __forceinline void __debugbreak() { __builtin_trap(); }
 #define __declspec(x) __attribute__((x))
 #undef __stdcall
 #define __stdcall  // __attribute__((__stdcall__))
-#define __ALIGNED__(x) __attribute__((aligned(x)))
 
 static __forceinline void* _aligned_malloc(size_t size, size_t alignment) {
   return _mm_malloc(size, alignment);
@@ -80,13 +79,6 @@ static __forceinline void* _aligned_malloc(size_t size, size_t alignment) {
 static __forceinline void _aligned_free(void* ptr) { return _mm_free(ptr); }
 #elif defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
 #include "intrin.h"
-#define __ALIGNED__(x) __declspec(align(x))
-#if (_MSC_VER < 1800)
-static __forceinline unsigned long long int strtoull(const char* str,
-                                                     char** endptr, int base) {
-  return static_cast<unsigned long long>(_strtoui64(str, endptr, base));
-}
-#endif
 #else
 #error "Compiler and/or processor not identified."
 #endif

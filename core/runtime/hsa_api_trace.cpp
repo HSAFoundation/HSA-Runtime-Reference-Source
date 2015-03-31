@@ -44,151 +44,226 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "core/inc/hsa_api_trace_int.h"
-#include "core/inc/runtime.h"
-#include "core/inc/hsa_table_interface.h"
+#ifndef HSA_NO_TOOLS_EXTENSION
 
-namespace core {
+#include "inc/hsa_api_trace.h"
+
+namespace core
+{
+
+	//Define core namespace interfaces - copy of function declarations in hsa.h
+	hsa_status_t HSA_API hsa_init();
+	hsa_status_t HSA_API hsa_shut_down();
+	hsa_status_t HSA_API hsa_system_get_info(hsa_system_info_t attribute, void *value);
+	hsa_status_t HSA_API hsa_iterate_agents(hsa_status_t (*callback)(hsa_agent_t agent, void *data),void *data);
+	hsa_status_t HSA_API hsa_agent_get_info(hsa_agent_t agent,hsa_agent_info_t attribute,void *value);
+	hsa_status_t HSA_API hsa_queue_create(hsa_agent_t agent, size_t size, hsa_queue_type_t type,void (*callback)(hsa_status_t status, hsa_queue_t *queue),const hsa_queue_t *service_queue, hsa_queue_t **queue);
+	hsa_status_t HSA_API hsa_queue_destroy(hsa_queue_t *queue);
+	hsa_status_t HSA_API hsa_queue_inactivate(hsa_queue_t *queue);
+	uint64_t HSA_API hsa_queue_load_read_index_acquire(hsa_queue_t *queue);
+	uint64_t HSA_API hsa_queue_load_read_index_relaxed(hsa_queue_t *queue);
+	uint64_t HSA_API hsa_queue_load_write_index_acquire(hsa_queue_t *queue);
+	uint64_t HSA_API hsa_queue_load_write_index_relaxed(hsa_queue_t *queue);
+	void HSA_API hsa_queue_store_write_index_relaxed(hsa_queue_t *queue, uint64_t value);
+	void HSA_API hsa_queue_store_write_index_release(hsa_queue_t *queue, uint64_t value);
+	uint64_t HSA_API hsa_queue_cas_write_index_acq_rel(hsa_queue_t *queue,uint64_t expected,uint64_t value);
+	uint64_t HSA_API hsa_queue_cas_write_index_acquire(hsa_queue_t *queue,uint64_t expected,uint64_t value);
+	uint64_t HSA_API hsa_queue_cas_write_index_relaxed(hsa_queue_t *queue,uint64_t expected,uint64_t value);
+	uint64_t HSA_API hsa_queue_cas_write_index_release(hsa_queue_t *queue,uint64_t expected,uint64_t value);
+	uint64_t HSA_API hsa_queue_add_write_index_acq_rel(hsa_queue_t *queue, uint64_t value);
+	uint64_t HSA_API hsa_queue_add_write_index_acquire(hsa_queue_t *queue, uint64_t value);
+	uint64_t HSA_API hsa_queue_add_write_index_relaxed(hsa_queue_t *queue, uint64_t value);
+	uint64_t HSA_API hsa_queue_add_write_index_release(hsa_queue_t *queue, uint64_t value);
+	void HSA_API hsa_queue_store_read_index_relaxed(hsa_queue_t *queue, uint64_t value);
+	void HSA_API hsa_queue_store_read_index_release(hsa_queue_t *queue, uint64_t value);
+	hsa_status_t HSA_API hsa_agent_iterate_regions(hsa_agent_t agent,hsa_status_t (*callback)(hsa_region_t region, void *data), void *data);
+	hsa_status_t HSA_API hsa_region_get_info(hsa_region_t region,hsa_region_info_t attribute,void *value);
+	hsa_status_t HSA_API hsa_memory_register(void *address, size_t size);
+	hsa_status_t HSA_API hsa_memory_deregister(void *address, size_t size);
+	hsa_status_t HSA_API hsa_memory_allocate(hsa_region_t region, size_t size, void **ptr);
+	hsa_status_t HSA_API hsa_memory_free(void *ptr);
+	hsa_status_t HSA_API hsa_signal_create(hsa_signal_value_t initial_value, uint32_t num_consumers,const hsa_agent_t *consumers, hsa_signal_t *signal);
+	hsa_status_t HSA_API hsa_signal_destroy(hsa_signal_t signal);
+	hsa_signal_value_t HSA_API hsa_signal_load_relaxed(hsa_signal_t signal);
+	hsa_signal_value_t HSA_API hsa_signal_load_acquire(hsa_signal_t signal);
+	void HSA_API hsa_signal_store_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_store_release(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_wait_relaxed(hsa_signal_t signal,hsa_signal_condition_t condition,hsa_signal_value_t compare_value,uint64_t timeout_hint,hsa_wait_expectancy_t wait_expectancy_hint);
+	hsa_signal_value_t HSA_API hsa_signal_wait_acquire(hsa_signal_t signal,hsa_signal_condition_t condition,hsa_signal_value_t compare_value,uint64_t timeout_hint,hsa_wait_expectancy_t wait_expectancy_hint);
+	void HSA_API hsa_signal_and_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_and_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_and_release(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_and_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_or_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_or_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_or_release(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_or_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_xor_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_xor_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_xor_release(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_xor_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_add_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_add_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_add_release(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_add_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_subtract_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_subtract_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_subtract_release(hsa_signal_t signal, hsa_signal_value_t value);
+	void HSA_API hsa_signal_subtract_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_exchange_relaxed(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_exchange_acquire(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_exchange_release(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_exchange_acq_rel(hsa_signal_t signal, hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_cas_relaxed(hsa_signal_t signal,hsa_signal_value_t expected,hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_cas_acquire(hsa_signal_t signal,hsa_signal_value_t expected,hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_cas_release(hsa_signal_t signal,hsa_signal_value_t expected,hsa_signal_value_t value);
+	hsa_signal_value_t HSA_API hsa_signal_cas_acq_rel(hsa_signal_t signal,hsa_signal_value_t expected,hsa_signal_value_t value);
+	hsa_status_t HSA_API hsa_status_string(hsa_status_t status, const char **status_string);
+	hsa_status_t HSA_API hsa_extension_query(hsa_extension_t extension, int* result);
+}
 
 ApiTable hsa_api_table_;
-ApiTable hsa_internal_api_table_;
 
-ApiTable::ApiTable() {
-  table.std_exts_ = NULL;
-  Reset();
-}
-
-void ApiTable::LinkExts(ExtTable *ptr) {
-  assert(ptr != NULL && "Invalid extension table linked.");
-  extension_backup = *ptr;
-  table.std_exts_ = ptr;
-}
-
-void ApiTable::Reset() {
-  table.hsa_init = HSA::hsa_init;
-  table.hsa_shut_down = HSA::hsa_shut_down;
-  table.hsa_system_get_info = HSA::hsa_system_get_info;
-  table.hsa_system_extension_supported = HSA::hsa_system_extension_supported;
-  table.hsa_system_get_extension_table = HSA::hsa_system_get_extension_table;
-  table.hsa_iterate_agents = HSA::hsa_iterate_agents;
-  table.hsa_agent_get_info = HSA::hsa_agent_get_info;
-  table.hsa_agent_get_exception_policies = HSA::hsa_agent_get_exception_policies;
-  table.hsa_agent_extension_supported = HSA::hsa_agent_extension_supported;
-  table.hsa_queue_create = HSA::hsa_queue_create;
-  table.hsa_soft_queue_create = HSA::hsa_soft_queue_create;
-  table.hsa_queue_destroy = HSA::hsa_queue_destroy;
-  table.hsa_queue_inactivate = HSA::hsa_queue_inactivate;
-  table.hsa_queue_load_read_index_acquire =
-      HSA::hsa_queue_load_read_index_acquire;
-  table.hsa_queue_load_read_index_relaxed =
-      HSA::hsa_queue_load_read_index_relaxed;
-  table.hsa_queue_load_write_index_acquire =
-      HSA::hsa_queue_load_write_index_acquire;
-  table.hsa_queue_load_write_index_relaxed =
-      HSA::hsa_queue_load_write_index_relaxed;
-  table.hsa_queue_store_write_index_relaxed =
-      HSA::hsa_queue_store_write_index_relaxed;
-  table.hsa_queue_store_write_index_release =
-      HSA::hsa_queue_store_write_index_release;
-  table.hsa_queue_cas_write_index_acq_rel =
-      HSA::hsa_queue_cas_write_index_acq_rel;
-  table.hsa_queue_cas_write_index_acquire =
-      HSA::hsa_queue_cas_write_index_acquire;
-  table.hsa_queue_cas_write_index_relaxed =
-      HSA::hsa_queue_cas_write_index_relaxed;
-  table.hsa_queue_cas_write_index_release =
-      HSA::hsa_queue_cas_write_index_release;
-  table.hsa_queue_add_write_index_acq_rel =
-      HSA::hsa_queue_add_write_index_acq_rel;
-  table.hsa_queue_add_write_index_acquire =
-      HSA::hsa_queue_add_write_index_acquire;
-  table.hsa_queue_add_write_index_relaxed =
-      HSA::hsa_queue_add_write_index_relaxed;
-  table.hsa_queue_add_write_index_release =
-      HSA::hsa_queue_add_write_index_release;
-  table.hsa_queue_store_read_index_relaxed =
-      HSA::hsa_queue_store_read_index_relaxed;
-  table.hsa_queue_store_read_index_release =
-      HSA::hsa_queue_store_read_index_release;
-  table.hsa_agent_iterate_regions = HSA::hsa_agent_iterate_regions;
-  table.hsa_region_get_info = HSA::hsa_region_get_info;
-  table.hsa_memory_register = HSA::hsa_memory_register;
-  table.hsa_memory_deregister = HSA::hsa_memory_deregister;
-  table.hsa_memory_allocate = HSA::hsa_memory_allocate;
-  table.hsa_memory_free = HSA::hsa_memory_free;
-  table.hsa_memory_copy = HSA::hsa_memory_copy;
-  table.hsa_memory_assign_agent = HSA::hsa_memory_assign_agent;
-  table.hsa_signal_create = HSA::hsa_signal_create;
-  table.hsa_signal_destroy = HSA::hsa_signal_destroy;
-  table.hsa_signal_load_relaxed = HSA::hsa_signal_load_relaxed;
-  table.hsa_signal_load_acquire = HSA::hsa_signal_load_acquire;
-  table.hsa_signal_store_relaxed = HSA::hsa_signal_store_relaxed;
-  table.hsa_signal_store_release = HSA::hsa_signal_store_release;
-  table.hsa_signal_wait_relaxed = HSA::hsa_signal_wait_relaxed;
-  table.hsa_signal_wait_acquire = HSA::hsa_signal_wait_acquire;
-  table.hsa_signal_and_relaxed = HSA::hsa_signal_and_relaxed;
-  table.hsa_signal_and_acquire = HSA::hsa_signal_and_acquire;
-  table.hsa_signal_and_release = HSA::hsa_signal_and_release;
-  table.hsa_signal_and_acq_rel = HSA::hsa_signal_and_acq_rel;
-  table.hsa_signal_or_relaxed = HSA::hsa_signal_or_relaxed;
-  table.hsa_signal_or_acquire = HSA::hsa_signal_or_acquire;
-  table.hsa_signal_or_release = HSA::hsa_signal_or_release;
-  table.hsa_signal_or_acq_rel = HSA::hsa_signal_or_acq_rel;
-  table.hsa_signal_xor_relaxed = HSA::hsa_signal_xor_relaxed;
-  table.hsa_signal_xor_acquire = HSA::hsa_signal_xor_acquire;
-  table.hsa_signal_xor_release = HSA::hsa_signal_xor_release;
-  table.hsa_signal_xor_acq_rel = HSA::hsa_signal_xor_acq_rel;
-  table.hsa_signal_exchange_relaxed = HSA::hsa_signal_exchange_relaxed;
-  table.hsa_signal_exchange_acquire = HSA::hsa_signal_exchange_acquire;
-  table.hsa_signal_exchange_release = HSA::hsa_signal_exchange_release;
-  table.hsa_signal_exchange_acq_rel = HSA::hsa_signal_exchange_acq_rel;
-  table.hsa_signal_add_relaxed = HSA::hsa_signal_add_relaxed;
-  table.hsa_signal_add_acquire = HSA::hsa_signal_add_acquire;
-  table.hsa_signal_add_release = HSA::hsa_signal_add_release;
-  table.hsa_signal_add_acq_rel = HSA::hsa_signal_add_acq_rel;
-  table.hsa_signal_subtract_relaxed = HSA::hsa_signal_subtract_relaxed;
-  table.hsa_signal_subtract_acquire = HSA::hsa_signal_subtract_acquire;
-  table.hsa_signal_subtract_release = HSA::hsa_signal_subtract_release;
-  table.hsa_signal_subtract_acq_rel = HSA::hsa_signal_subtract_acq_rel;
-  table.hsa_signal_cas_relaxed = HSA::hsa_signal_cas_relaxed;
-  table.hsa_signal_cas_acquire = HSA::hsa_signal_cas_acquire;
-  table.hsa_signal_cas_release = HSA::hsa_signal_cas_release;
-  table.hsa_signal_cas_acq_rel = HSA::hsa_signal_cas_acq_rel;
-  table.hsa_isa_from_name = HSA::hsa_isa_from_name;
-  table.hsa_isa_get_info = HSA::hsa_isa_get_info;
-  table.hsa_isa_compatible = HSA::hsa_isa_compatible;
-  table.hsa_code_object_serialize = HSA::hsa_code_object_serialize;
-  table.hsa_code_object_deserialize = HSA::hsa_code_object_deserialize;
-  table.hsa_code_object_destroy = HSA::hsa_code_object_destroy;
-  table.hsa_code_object_get_info = HSA::hsa_code_object_get_info;
-  table.hsa_code_object_get_symbol = HSA::hsa_code_object_get_symbol;
-  table.hsa_code_symbol_get_info = HSA::hsa_code_symbol_get_info;
-  table.hsa_code_object_iterate_symbols = HSA::hsa_code_object_iterate_symbols;
-  table.hsa_executable_create = HSA::hsa_executable_create;
-  table.hsa_executable_destroy = HSA::hsa_executable_destroy;
-  table.hsa_executable_load_code_object = HSA::hsa_executable_load_code_object;
-  table.hsa_executable_freeze = HSA::hsa_executable_freeze;
-  table.hsa_executable_get_info = HSA::hsa_executable_get_info;
-  table.hsa_executable_global_variable_define = HSA::hsa_executable_global_variable_define;
-  table.hsa_executable_agent_global_variable_define = HSA::hsa_executable_agent_global_variable_define;
-  table.hsa_executable_readonly_variable_define = HSA::hsa_executable_readonly_variable_define;
-  table.hsa_executable_validate = HSA::hsa_executable_validate;
-  table.hsa_executable_get_symbol = HSA::hsa_executable_get_symbol;
-  table.hsa_executable_symbol_get_info = HSA::hsa_executable_symbol_get_info;
-  table.hsa_executable_iterate_symbols = HSA::hsa_executable_iterate_symbols;
-  table.hsa_status_string = HSA::hsa_status_string;
-
-  if (table.std_exts_ != NULL) *table.std_exts_ = extension_backup;
-}
-
-class Init
+ApiTable::ApiTable()
 {
-public:
-  Init()
-  {
-    hsa_table_interface_init(&hsa_api_table_.table);
-  }
-};
-static Init LinkAtLoad;
-
+	hsa_init=core::hsa_init;
+	hsa_shut_down=core::hsa_shut_down;
+	hsa_system_get_info=core::hsa_system_get_info;
+	hsa_iterate_agents=core::hsa_iterate_agents;
+	hsa_agent_get_info=core::hsa_agent_get_info;
+	hsa_queue_create=core::hsa_queue_create;
+	hsa_queue_destroy=core::hsa_queue_destroy;
+	hsa_queue_inactivate=core::hsa_queue_inactivate;
+	hsa_queue_load_read_index_acquire=core::hsa_queue_load_read_index_acquire;
+	hsa_queue_load_read_index_relaxed=core::hsa_queue_load_read_index_relaxed;
+	hsa_queue_load_write_index_acquire=core::hsa_queue_load_write_index_acquire;
+	hsa_queue_load_write_index_relaxed=core::hsa_queue_load_write_index_relaxed;
+	hsa_queue_store_write_index_relaxed=core::hsa_queue_store_write_index_relaxed;
+	hsa_queue_store_write_index_release=core::hsa_queue_store_write_index_release;
+	hsa_queue_cas_write_index_acq_rel=core::hsa_queue_cas_write_index_acq_rel;
+	hsa_queue_cas_write_index_acquire=core::hsa_queue_cas_write_index_acquire;
+	hsa_queue_cas_write_index_relaxed=core::hsa_queue_cas_write_index_relaxed;
+	hsa_queue_cas_write_index_release=core::hsa_queue_cas_write_index_release;
+	hsa_queue_add_write_index_acq_rel=core::hsa_queue_add_write_index_acq_rel;
+	hsa_queue_add_write_index_acquire=core::hsa_queue_add_write_index_acquire;
+	hsa_queue_add_write_index_relaxed=core::hsa_queue_add_write_index_relaxed;
+	hsa_queue_add_write_index_release=core::hsa_queue_add_write_index_release;
+	hsa_queue_store_read_index_relaxed=core::hsa_queue_store_read_index_relaxed;
+	hsa_queue_store_read_index_release=core::hsa_queue_store_read_index_release;
+	hsa_agent_iterate_regions=core::hsa_agent_iterate_regions;
+	hsa_region_get_info=core::hsa_region_get_info;
+	hsa_memory_register=core::hsa_memory_register;
+	hsa_memory_deregister=core::hsa_memory_deregister;
+	hsa_memory_allocate=core::hsa_memory_allocate;
+	hsa_memory_free=core::hsa_memory_free;
+	hsa_signal_create=core::hsa_signal_create;
+	hsa_signal_destroy=core::hsa_signal_destroy;
+	hsa_signal_load_relaxed=core::hsa_signal_load_relaxed;
+	hsa_signal_load_acquire=core::hsa_signal_load_acquire;
+	hsa_signal_store_relaxed=core::hsa_signal_store_relaxed;
+	hsa_signal_store_release=core::hsa_signal_store_release;
+	hsa_signal_wait_relaxed=core::hsa_signal_wait_relaxed;
+	hsa_signal_wait_acquire=core::hsa_signal_wait_acquire;
+	hsa_signal_and_relaxed=core::hsa_signal_and_relaxed;
+	hsa_signal_and_acquire=core::hsa_signal_and_acquire;
+	hsa_signal_and_release=core::hsa_signal_and_release;
+	hsa_signal_and_acq_rel=core::hsa_signal_and_acq_rel;
+	hsa_signal_or_relaxed=core::hsa_signal_or_relaxed;
+	hsa_signal_or_acquire=core::hsa_signal_or_acquire;
+	hsa_signal_or_release=core::hsa_signal_or_release;
+	hsa_signal_or_acq_rel=core::hsa_signal_or_acq_rel;
+	hsa_signal_xor_relaxed=core::hsa_signal_xor_relaxed;
+	hsa_signal_xor_acquire=core::hsa_signal_xor_acquire;
+	hsa_signal_xor_release=core::hsa_signal_xor_release;
+	hsa_signal_xor_acq_rel=core::hsa_signal_xor_acq_rel;
+	hsa_signal_exchange_relaxed=core::hsa_signal_exchange_relaxed;
+	hsa_signal_exchange_acquire=core::hsa_signal_exchange_acquire;
+	hsa_signal_exchange_release=core::hsa_signal_exchange_release;
+	hsa_signal_exchange_acq_rel=core::hsa_signal_exchange_acq_rel;
+	hsa_signal_add_relaxed=core::hsa_signal_add_relaxed;
+	hsa_signal_add_acquire=core::hsa_signal_add_acquire;
+	hsa_signal_add_release=core::hsa_signal_add_release;
+	hsa_signal_add_acq_rel=core::hsa_signal_add_acq_rel;
+	hsa_signal_subtract_relaxed=core::hsa_signal_subtract_relaxed;
+	hsa_signal_subtract_acquire=core::hsa_signal_subtract_acquire;
+	hsa_signal_subtract_release=core::hsa_signal_subtract_release;
+	hsa_signal_subtract_acq_rel=core::hsa_signal_subtract_acq_rel;
+	hsa_signal_cas_relaxed=core::hsa_signal_cas_relaxed;
+	hsa_signal_cas_acquire=core::hsa_signal_cas_acquire;
+	hsa_signal_cas_release=core::hsa_signal_cas_release;
+	hsa_signal_cas_acq_rel=core::hsa_signal_cas_acq_rel;
+	hsa_status_string=core::hsa_status_string;
+	hsa_extension_query=core::hsa_extension_query;
 }
+
+//Exported pass through stubs
+hsa_status_t HSA_API hsa_init() { return hsa_api_table_.hsa_init(); }
+hsa_status_t HSA_API hsa_shut_down() { return hsa_api_table_.hsa_shut_down(); }
+hsa_status_t HSA_API hsa_system_get_info(hsa_system_info_t attribute, void *value) { return hsa_api_table_.hsa_system_get_info(attribute, value); }
+hsa_status_t HSA_API hsa_iterate_agents(hsa_status_t (*callback)(hsa_agent_t agent, void *data), void *data) { return hsa_api_table_.hsa_iterate_agents(callback, data); }
+hsa_status_t HSA_API hsa_agent_get_info(hsa_agent_t agent, hsa_agent_info_t attribute, void *value) { return hsa_api_table_.hsa_agent_get_info(agent, attribute, value); }
+hsa_status_t HSA_API hsa_queue_create(hsa_agent_t agent, size_t size, hsa_queue_type_t type, void (*callback)(hsa_status_t status, hsa_queue_t *queue), const hsa_queue_t *service_queue, hsa_queue_t **queue) { return hsa_api_table_.hsa_queue_create(agent, size, type, callback, service_queue, queue); }
+hsa_status_t HSA_API hsa_queue_destroy(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_destroy(queue); }
+hsa_status_t HSA_API hsa_queue_inactivate(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_inactivate(queue); }
+uint64_t HSA_API hsa_queue_load_read_index_acquire(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_load_read_index_acquire(queue); }
+uint64_t HSA_API hsa_queue_load_read_index_relaxed(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_load_read_index_relaxed(queue); }
+uint64_t HSA_API hsa_queue_load_write_index_acquire(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_load_write_index_acquire(queue); }
+uint64_t HSA_API hsa_queue_load_write_index_relaxed(hsa_queue_t *queue) { return hsa_api_table_.hsa_queue_load_write_index_relaxed(queue); }
+void HSA_API hsa_queue_store_write_index_relaxed(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_store_write_index_relaxed(queue, value); }
+void HSA_API hsa_queue_store_write_index_release(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_store_write_index_release(queue, value); }
+uint64_t HSA_API hsa_queue_cas_write_index_acq_rel(hsa_queue_t *queue, uint64_t expected, uint64_t value) { return hsa_api_table_.hsa_queue_cas_write_index_acq_rel(queue, expected, value); }
+uint64_t HSA_API hsa_queue_cas_write_index_acquire(hsa_queue_t *queue, uint64_t expected, uint64_t value) { return hsa_api_table_.hsa_queue_cas_write_index_acquire(queue, expected, value); }
+uint64_t HSA_API hsa_queue_cas_write_index_relaxed(hsa_queue_t *queue, uint64_t expected, uint64_t value) { return hsa_api_table_.hsa_queue_cas_write_index_relaxed(queue, expected, value); }
+uint64_t HSA_API hsa_queue_cas_write_index_release(hsa_queue_t *queue, uint64_t expected, uint64_t value) { return hsa_api_table_.hsa_queue_cas_write_index_release(queue, expected, value); }
+uint64_t HSA_API hsa_queue_add_write_index_acq_rel(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_add_write_index_acq_rel(queue, value); }
+uint64_t HSA_API hsa_queue_add_write_index_acquire(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_add_write_index_acquire(queue, value); }
+uint64_t HSA_API hsa_queue_add_write_index_relaxed(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_add_write_index_relaxed(queue, value); }
+uint64_t HSA_API hsa_queue_add_write_index_release(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_add_write_index_release(queue, value); }
+void HSA_API hsa_queue_store_read_index_relaxed(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_store_read_index_relaxed(queue, value); }
+void HSA_API hsa_queue_store_read_index_release(hsa_queue_t *queue, uint64_t value) { return hsa_api_table_.hsa_queue_store_read_index_release(queue, value); }
+hsa_status_t HSA_API hsa_agent_iterate_regions( hsa_agent_t agent, hsa_status_t (*callback)(hsa_region_t region, void *data), void *data) { return hsa_api_table_.hsa_agent_iterate_regions(agent, callback, data); }
+hsa_status_t HSA_API hsa_region_get_info(hsa_region_t region, hsa_region_info_t attribute, void *value) { return hsa_api_table_.hsa_region_get_info(region, attribute, value); }
+hsa_status_t HSA_API hsa_memory_register(void *address, size_t size) { return hsa_api_table_.hsa_memory_register(address, size); }
+hsa_status_t HSA_API hsa_memory_deregister(void *address, size_t size) { return hsa_api_table_.hsa_memory_deregister(address, size); }
+hsa_status_t HSA_API hsa_memory_allocate(hsa_region_t region, size_t size, void **ptr) { return hsa_api_table_.hsa_memory_allocate(region, size, ptr); }
+hsa_status_t HSA_API hsa_memory_free(void *ptr) { return hsa_api_table_.hsa_memory_free(ptr); }
+hsa_status_t HSA_API hsa_signal_create(hsa_signal_value_t initial_value, uint32_t num_consumers, const hsa_agent_t *consumers, hsa_signal_t *signal) { return hsa_api_table_.hsa_signal_create(initial_value, num_consumers, consumers, signal); }
+hsa_status_t HSA_API hsa_signal_destroy(hsa_signal_t signal) { return hsa_api_table_.hsa_signal_destroy(signal); }
+hsa_signal_value_t HSA_API hsa_signal_load_relaxed(hsa_signal_t signal) { return hsa_api_table_.hsa_signal_load_relaxed(signal); }
+hsa_signal_value_t HSA_API hsa_signal_load_acquire(hsa_signal_t signal) { return hsa_api_table_.hsa_signal_load_acquire(signal); }
+void HSA_API hsa_signal_store_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_store_relaxed(signal, value); }
+void HSA_API hsa_signal_store_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_store_release(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_wait_relaxed(hsa_signal_t signal, hsa_signal_condition_t condition, hsa_signal_value_t compare_value, uint64_t timeout_hint, hsa_wait_expectancy_t wait_expectancy_hint) { return hsa_api_table_.hsa_signal_wait_relaxed(signal, condition, compare_value, timeout_hint, wait_expectancy_hint); }
+hsa_signal_value_t HSA_API hsa_signal_wait_acquire(hsa_signal_t signal, hsa_signal_condition_t condition, hsa_signal_value_t compare_value, uint64_t timeout_hint, hsa_wait_expectancy_t wait_expectancy_hint) { return hsa_api_table_.hsa_signal_wait_acquire(signal, condition, compare_value, timeout_hint, wait_expectancy_hint); }
+void HSA_API hsa_signal_and_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_and_relaxed(signal, value); }
+void HSA_API hsa_signal_and_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_and_acquire(signal, value); }
+void HSA_API hsa_signal_and_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_and_release(signal, value); }
+void HSA_API hsa_signal_and_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_and_acq_rel(signal, value); }
+void HSA_API hsa_signal_or_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_or_relaxed(signal, value); }
+void HSA_API hsa_signal_or_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_or_acquire(signal, value); }
+void HSA_API hsa_signal_or_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_or_release(signal, value); }
+void HSA_API hsa_signal_or_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_or_acq_rel(signal, value); }
+void HSA_API hsa_signal_xor_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_xor_relaxed(signal, value); }
+void HSA_API hsa_signal_xor_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_xor_acquire(signal, value); }
+void HSA_API hsa_signal_xor_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_xor_release(signal, value); }
+void HSA_API hsa_signal_xor_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_xor_acq_rel(signal, value); }
+void HSA_API hsa_signal_add_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_add_relaxed(signal, value); }
+void HSA_API hsa_signal_add_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_add_acquire(signal, value); }
+void HSA_API hsa_signal_add_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_add_release(signal, value); }
+void HSA_API hsa_signal_add_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_add_acq_rel(signal, value); }
+void HSA_API hsa_signal_subtract_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_subtract_relaxed(signal, value); }
+void HSA_API hsa_signal_subtract_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_subtract_acquire(signal, value); }
+void HSA_API hsa_signal_subtract_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_subtract_release(signal, value); }
+void HSA_API hsa_signal_subtract_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_subtract_acq_rel(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_exchange_relaxed(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_exchange_relaxed(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_exchange_acquire(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_exchange_acquire(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_exchange_release(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_exchange_release(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_exchange_acq_rel(hsa_signal_t signal, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_exchange_acq_rel(signal, value); }
+hsa_signal_value_t HSA_API hsa_signal_cas_relaxed(hsa_signal_t signal, hsa_signal_value_t expected, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_cas_relaxed(signal, expected, value); }
+hsa_signal_value_t HSA_API hsa_signal_cas_acquire(hsa_signal_t signal, hsa_signal_value_t expected, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_cas_acquire(signal, expected, value); }
+hsa_signal_value_t HSA_API hsa_signal_cas_release(hsa_signal_t signal, hsa_signal_value_t expected, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_cas_release(signal, expected, value); }
+hsa_signal_value_t HSA_API hsa_signal_cas_acq_rel(hsa_signal_t signal, hsa_signal_value_t expected, hsa_signal_value_t value) { return hsa_api_table_.hsa_signal_cas_acq_rel(signal, expected, value); }
+hsa_status_t HSA_API hsa_status_string(hsa_status_t status, const char **status_string) { return hsa_api_table_.hsa_status_string(status, status_string); }
+hsa_status_t HSA_API hsa_extension_query(hsa_extension_t extension, int* result) { return hsa_api_table_.hsa_extension_query(extension, result); }
+
+#endif

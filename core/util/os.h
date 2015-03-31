@@ -56,7 +56,7 @@ namespace os {
 typedef void* LibHandle;
 typedef void* Mutex;
 typedef void* Thread;
-typedef void* EventHandle;
+typedef void *EventHandle;
 
 enum class os_t { OS_WIN = 0, OS_LINUX, COUNT };
 static __forceinline std::underlying_type<os_t>::type os_index(os_t val) {

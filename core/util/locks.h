@@ -120,21 +120,4 @@ class SpinMutex {
   DISALLOW_COPY_AND_ASSIGN(SpinMutex);
 };
 
-class KernelEvent {
- public:
-  KernelEvent() { evt_ = os::CreateOsEvent(true, true); }
-  ~KernelEvent() { os::DestroyOsEvent(evt_); }
-
-  bool IsSet() { return os::WaitForOsEvent(evt_, 0)==0; }
-  bool WaitForSet() { return os::WaitForOsEvent(evt_, 0xFFFFFFFF)==0; }
-  void Set() { os::SetOsEvent(evt_); }
-  void Reset() { os::ResetOsEvent(evt_); }
-
- private:
-  os::EventHandle evt_;
-
-  /// @brief: Disable copiable and assignable ability.
-  DISALLOW_COPY_AND_ASSIGN(KernelEvent);
-};
-
 #endif  // HSA_RUNTIME_CORE_SUTIL_LOCKS_H_

@@ -64,7 +64,7 @@ class CpuAgent : public core::Agent {
 
   ~CpuAgent();
 
-  void RegisterMemoryProperties(core::MemoryRegion& region);
+  void RegisterMemoryProperties(const HsaMemoryProperties properties);
 
   hsa_status_t IterateRegion(hsa_status_t (*callback)(hsa_region_t region,
                                                       void* data),
@@ -81,46 +81,23 @@ class CpuAgent : public core::Agent {
   /// @param callback Callback function to register in case Quee
   /// encounters an error
   ///
-  /// @param data Application data that is passed to @p callback on every
-  /// iteration.May be NULL.
-  ///
-  /// @param private_segment_size Hint indicating the maximum
-  /// expected private segment usage per work - item, in bytes.There may
-  /// be performance degradation if the application places a Kernel
-  /// Dispatch packet in the queue and the corresponding private segment
-  /// usage exceeds @p private_segment_size.If the application does not
-  /// want to specify any particular value for this argument, @p
-  /// private_segment_size must be UINT32_MAX.If the queue does not
-  /// support Kernel Dispatch packets, this argument is ignored.
-  ///
-  /// @param group_segment_size Hint indicating the maximum expected
-  /// group segment usage per work - group, in bytes.There may be
-  /// performance degradation if the application places a Kernel Dispatch
-  /// packet in the queue and the corresponding group segment usage
-  /// exceeds @p group_segment_size.If the application does not want to
-  /// specify any particular value for this argument, @p
-  /// group_segment_size must be UINT32_MAX.If the queue does not
-  /// support Kernel Dispatch packets, this argument is ignored.
+  /// @param service_queue Pointer to a service queue
   ///
   /// @parm queue Output parameter updated with a pointer to the
   /// queue being created
   ///
   /// @return hsa_status
-  hsa_status_t QueueCreate(size_t size, hsa_queue_type_t queue_type,
-                           core::HsaEventCallback event_callback, void* data,
-                           uint32_t private_segment_size,
-                           uint32_t group_segment_size, core::Queue** queue);
+  hsa_status_t QueueCreate(size_t size, hsa_queue_type_t type,
+                           core::HsaEventCallback callback,
+                           const hsa_queue_t* service_queue,
+                           core::Queue** queue);
 
-  __forceinline HSAuint32 node_id() const { return node_id_; }
+  __forceinline HSAuint32 node_id() const  { return node_id_; }
 
   __forceinline size_t num_cache() const { return cache_props_.size(); }
 
   __forceinline const HsaCacheProperties& cache_prop(int idx) const {
     return cache_props_[idx];
-  }
-
-  const std::vector<const core::MemoryRegion*>& regions() const {
-    return regions_;
   }
 
  private:
@@ -129,8 +106,6 @@ class CpuAgent : public core::Agent {
   const HsaNodeProperties properties_;
 
   std::vector<HsaCacheProperties> cache_props_;
-
-  std::vector<const core::MemoryRegion*> regions_;
 
   DISALLOW_COPY_AND_ASSIGN(CpuAgent);
 };

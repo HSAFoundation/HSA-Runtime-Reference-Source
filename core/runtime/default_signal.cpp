@@ -49,17 +49,17 @@
 namespace core {
 
 DefaultSignal::DefaultSignal(hsa_signal_value_t initial_value)
-    : Signal(initial_value) {
+    : Signal(initial_value), invalid_(false), waiting_(0) {
   signal_.type = kHsaSignalAmd;
   signal_.event_mailbox_ptr = NULL;
-  HSA::hsa_memory_register(this, sizeof(DefaultSignal));
+  hsa_memory_register(this, sizeof(DefaultSignal));
 }
 
 DefaultSignal::~DefaultSignal() {
   invalid_ = true;
   while (waiting_ != 0)
     ;
-  HSA::hsa_memory_deregister(this, sizeof(DefaultSignal));
+  hsa_memory_deregister(this, sizeof(DefaultSignal));
 }
 
 hsa_signal_value_t DefaultSignal::LoadRelaxed() {
@@ -83,17 +83,17 @@ void DefaultSignal::StoreRelease(hsa_signal_value_t value) {
 hsa_signal_value_t DefaultSignal::WaitRelaxed(hsa_signal_condition_t condition,
                                               hsa_signal_value_t compare_value,
                                               uint64_t timeout,
-                                              hsa_wait_state_t wait_hint) {
+                                              hsa_wait_expectancy_t wait_hint) {
   atomic::Increment(&waiting_);
   MAKE_SCOPE_GUARD([&]() { atomic::Decrement(&waiting_); });
   bool condition_met = false;
   int64_t value;
 
   uint64_t start_time, sys_time;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
+  hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
 
   while (true) {
-    HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
+    hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
     if (sys_time - start_time > timeout) {
       value = atomic::Load(&signal_.value, std::memory_order_relaxed);
       return hsa_signal_value_t(value);
@@ -105,19 +105,19 @@ hsa_signal_value_t DefaultSignal::WaitRelaxed(hsa_signal_condition_t condition,
       value = atomic::Load(&signal_.value, std::memory_order_relaxed);
 
       switch (condition) {
-        case HSA_SIGNAL_CONDITION_EQ: {
+        case HSA_EQ: {
           condition_met = (value == compare_value);
           break;
         }
-        case HSA_SIGNAL_CONDITION_NE: {
+        case HSA_NE: {
           condition_met = (value != compare_value);
           break;
         }
-        case HSA_SIGNAL_CONDITION_GTE: {
+        case HSA_GTE: {
           condition_met = (value >= compare_value);
           break;
         }
-        case HSA_SIGNAL_CONDITION_LT: {
+        case HSA_LT: {
           condition_met = (value < compare_value);
           break;
         }
@@ -132,7 +132,7 @@ hsa_signal_value_t DefaultSignal::WaitRelaxed(hsa_signal_condition_t condition,
 hsa_signal_value_t DefaultSignal::WaitAcquire(hsa_signal_condition_t condition,
                                               hsa_signal_value_t compare_value,
                                               uint64_t timeout,
-                                              hsa_wait_state_t wait_hint) {
+                                              hsa_wait_expectancy_t wait_hint) {
   hsa_signal_value_t ret =
       WaitRelaxed(condition, compare_value, timeout, wait_hint);
   std::atomic_thread_fence(std::memory_order_acquire);

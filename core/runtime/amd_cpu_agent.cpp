@@ -52,8 +52,6 @@
 #include "core/inc/amd_memory_region.h"
 #include "core/inc/host_queue.h"
 
-#include "inc/hsa_ext_image.h"
-
 namespace amd {
 CpuAgent::CpuAgent(HSAuint32 node, const HsaNodeProperties& node_props,
                    const std::vector<HsaCacheProperties>& cache_props)
@@ -62,15 +60,18 @@ CpuAgent::CpuAgent(HSAuint32 node, const HsaNodeProperties& node_props,
       properties_(node_props),
       cache_props_(cache_props) {}
 
-CpuAgent::~CpuAgent() { regions_.clear(); }
+CpuAgent::~CpuAgent() {
+  std::for_each(core::Agent::regions_.begin(), core::Agent::regions_.end(),
+                DeleteObject());
+  core::Agent::regions_.clear();
+}
 
-void CpuAgent::RegisterMemoryProperties(core::MemoryRegion& region) {
-  MemoryRegion* amd_region = reinterpret_cast<MemoryRegion*>(&region);
-
-  assert((amd_region->IsSystem()) &&
-         ("Memory region should only be system memory"));
-
-  regions_.push_back(amd_region);
+void CpuAgent::RegisterMemoryProperties(
+    const HsaMemoryProperties properties) {
+  assert((properties.HeapType != HSA_HEAPTYPE_GPU_GDS) &&
+         (properties.HeapType != HSA_HEAPTYPE_GPU_SCRATCH) &&
+         ("Memory region should only be global or group"));
+  core::Agent::regions_.push_back(new MemoryRegion(*this, properties));
 }
 
 hsa_status_t CpuAgent::IterateRegion(
@@ -91,9 +92,7 @@ hsa_status_t CpuAgent::IterateRegion(
 
 hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
   const size_t kNameSize = 64;  // agent, and vendor name size limit
-
-  const size_t attribute_u = static_cast<size_t>(attribute);
-  switch (attribute_u) {
+  switch (attribute) {
     case HSA_AGENT_INFO_NAME:
       // TODO: hardcode for now.
       std::memset(value, 0, kNameSize);
@@ -104,27 +103,7 @@ hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       std::memcpy(value, "AMD", sizeof("AMD"));
       break;
     case HSA_AGENT_INFO_FEATURE:
-      *((hsa_agent_feature_t*)value) = static_cast<hsa_agent_feature_t>(0);
-      break;
-    case HSA_AGENT_INFO_MACHINE_MODEL:
-#if defined(HSA_LARGE_MODEL)
-      *((hsa_machine_model_t*)value) = HSA_MACHINE_MODEL_LARGE;
-#else
-      *((hsa_machine_model_t*)value) = HSA_MACHINE_MODEL_SMALL;
-#endif
-      break;
-    case HSA_AGENT_INFO_BASE_PROFILE_DEFAULT_FLOAT_ROUNDING_MODES:
-    case HSA_AGENT_INFO_DEFAULT_FLOAT_ROUNDING_MODE:
-      // TODO: validate if this is true.
-      *((hsa_default_float_rounding_mode_t*)value) =
-          HSA_DEFAULT_FLOAT_ROUNDING_MODE_NEAR;
-      break;
-    case HSA_AGENT_INFO_FAST_F16_OPERATION:
-      // TODO: validate if this is trye.
-      *((bool*)value) = false;
-      break;
-    case HSA_AGENT_INFO_PROFILE:
-      *((hsa_profile_t*)value) = HSA_PROFILE_FULL;
+      *((hsa_agent_feature_t*)value) = HSA_AGENT_FEATURE_AGENT_DISPATCH;
       break;
     case HSA_AGENT_INFO_WAVEFRONT_SIZE:
       *((uint32_t*)value) = 0;
@@ -146,16 +125,13 @@ hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       *((uint32_t*)value) = 0;
       break;
     case HSA_AGENT_INFO_QUEUES_MAX:
-      *((uint32_t*)value) = 0;
-      break;
-    case HSA_AGENT_INFO_QUEUE_MIN_SIZE:
-      *((uint32_t*)value) = 0;
+      *((uint32_t*)value) = 1024;
       break;
     case HSA_AGENT_INFO_QUEUE_MAX_SIZE:
-      *((uint32_t*)value) = 0;
+      *((uint32_t*)value) = 0x80000000;
       break;
     case HSA_AGENT_INFO_QUEUE_TYPE:
-      *((hsa_queue_type_t*)value) = static_cast<hsa_queue_type_t>(0);
+      *((hsa_queue_type_t*)value) = HSA_QUEUE_TYPE_MULTI;
       break;
     case HSA_AGENT_INFO_NODE:
       *((uint32_t*)value) = properties_.LocationId;
@@ -173,74 +149,65 @@ hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
         ((uint32_t*)value)[line_level - 1] = cache_props_[i].CacheSize * 1024;
       }
     } break;
-    case HSA_AGENT_INFO_ISA:
-      ((hsa_isa_t*)value)->handle = 0;
+    case HSA_EXT_AGENT_INFO_IMAGE1D_MAX_DIM:
+      std::memset(value, 0, sizeof(hsa_dim3_t));
       break;
-    case HSA_AGENT_INFO_EXTENSIONS:
-      memset(value, 0, sizeof(uint8_t) * 128);
+    case HSA_EXT_AGENT_INFO_IMAGE2D_MAX_DIM:
+      std::memset(value, 0, sizeof(hsa_dim3_t));
       break;
-    case HSA_AGENT_INFO_VERSION_MAJOR:
-      *((uint16_t*)value) = 1;
+    case HSA_EXT_AGENT_INFO_IMAGE3D_MAX_DIM:
+      std::memset(value, 0, sizeof(hsa_dim3_t));
       break;
-    case HSA_AGENT_INFO_VERSION_MINOR:
-      *((uint16_t*)value) = 0;
-      break;
-    case HSA_EXT_AGENT_INFO_IMAGE_1D_MAX_ELEMENTS:
-    case HSA_EXT_AGENT_INFO_IMAGE_1DA_MAX_ELEMENTS:
-    case HSA_EXT_AGENT_INFO_IMAGE_1DB_MAX_ELEMENTS:
+    case HSA_EXT_AGENT_INFO_IMAGE_ARRAY_MAX_SIZE:
       *((uint32_t*)value) = 0;
       break;
-    case HSA_EXT_AGENT_INFO_IMAGE_2D_MAX_ELEMENTS:
-    case HSA_EXT_AGENT_INFO_IMAGE_2DA_MAX_ELEMENTS:
-    case HSA_EXT_AGENT_INFO_IMAGE_2DDEPTH_MAX_ELEMENTS:
-    case HSA_EXT_AGENT_INFO_IMAGE_2DADEPTH_MAX_ELEMENTS:
-      memset(value, 0, sizeof(uint32_t) * 2);
-      break;
-    case HSA_EXT_AGENT_INFO_IMAGE_3D_MAX_ELEMENTS:
-      memset(value, 0, sizeof(uint32_t) * 3);
-      break;
-    case HSA_EXT_AGENT_INFO_IMAGE_ARRAY_MAX_LAYERS:
+    case HSA_EXT_AGENT_INFO_IMAGE_RD_MAX:
       *((uint32_t*)value) = 0;
       break;
-    case HSA_EXT_AGENT_INFO_MAX_IMAGE_RD_HANDLES:
-    case HSA_EXT_AGENT_INFO_MAX_IMAGE_RORW_HANDLES:
-    case HSA_EXT_AGENT_INFO_MAX_SAMPLER_HANDLERS:
+    case HSA_EXT_AGENT_INFO_IMAGE_RDWR_MAX:
       *((uint32_t*)value) = 0;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_DEVICE_ID:
-      *((uint32_t*)value) = properties_.DeviceId;
-      break;
-    case HSA_EXT_AMD_AGENT_INFO_CACHELINE_SIZE:
-      // TODO: hardcode for now.
-      *((uint32_t*)value) = 64;
-      break;
-    case HSA_EXT_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
-      *((uint32_t*)value) = properties_.NumCPUCores;
-      break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY:
-      *((uint32_t*)value) = properties_.MaxEngineClockMhzCCompute;
-      break;
-    case HSA_EXT_AMD_AGENT_INFO_DRIVER_NODE_ID:
-      *((uint32_t*)value) = node_id_;
-      break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_ADDRESS_WATCH_POINTS:
-      *((uint32_t*)value) = static_cast<uint32_t>(
-          1 << properties_.Capability.ui32.WatchPointsTotalBits);
+    case HSA_EXT_AGENT_INFO_SAMPLER_MAX:
+      *((uint32_t*)value) = 0;
       break;
     default:
-      return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+      switch ((hsa_amd_agent_info_t)attribute) {
+        case HSA_EXT_AGENT_INFO_DEVICE_ID:
+          *((uint32_t*)value) = properties_.DeviceId;
+          break;
+        case HSA_EXT_AGENT_INFO_CACHELINE_SIZE:
+          // TODO: hardcode for now.
+          *((uint32_t*)value) = 64;
+          break;
+        case HSA_EXT_AGENT_INFO_COMPUTE_UNIT_COUNT:
+          *((uint32_t*)value) = properties_.NumCPUCores;
+          break;
+        case HSA_EXT_AGENT_INFO_MAX_CLOCK_FREQUENCY:
+          *((uint32_t*)value) = properties_.MaxEngineClockMhzCCompute;
+          break;
+        default:
+          return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+          break;
+      }
       break;
   }
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t CpuAgent::QueueCreate(size_t size, hsa_queue_type_t queue_type,
-                                   core::HsaEventCallback event_callback,
-                                   void* data, uint32_t private_segment_size,
-                                   uint32_t group_segment_size,
+hsa_status_t CpuAgent::QueueCreate(size_t size, hsa_queue_type_t type,
+                                   core::HsaEventCallback callback,
+                                   const hsa_queue_t* service_queue,
                                    core::Queue** queue) {
-  // No HW AQL packet processor on CPU device.
-  return HSA_STATUS_ERROR;
+  if (!IsPowerOfTwo(size))
+    return HSA_STATUS_ERROR;  // AQL queues must be a power of two in length.
+
+  core::HostQueue* host_queue = new core::HostQueue(uint32_t(size));
+  if (!host_queue->active()) {
+    delete queue;
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  }
+  *queue = host_queue;
+  return HSA_STATUS_SUCCESS;
 }
 
 }  // namespace

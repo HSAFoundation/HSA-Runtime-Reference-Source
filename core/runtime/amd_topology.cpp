@@ -46,16 +46,13 @@
 
 #include "core/inc/amd_topology.h"
 
-#include <algorithm>
 #include <cstring>
 #include <vector>
 
 #include "core/inc/runtime.h"
 #include "core/inc/amd_cpu_agent.h"
 #include "core/inc/amd_gpu_agent.h"
-#include "core/inc/amd_memory_region.h"
 #include "core/inc/thunk.h"
-#include "core/util/utils.h"
 
 namespace amd {
 // Minimum acceptable KFD version numbers
@@ -74,11 +71,6 @@ void BuildTopology() {
       info.KernelInterfaceMinorVersion < kKfdVersionMinor) {
     return;
   }
-
-  // Disable KFD event support when using open source KFD
-  if (info.KernelInterfaceMajorVersion == 1 &&
-      info.KernelInterfaceMinorVersion == 0)
-    core::g_use_interrupt_wait = false;
 
   HsaSystemProperties props;
   hsaKmtReleaseSystemProperties();
@@ -165,6 +157,10 @@ void BuildTopology() {
               if (sizeof(void*) == 4) {
                 // No gpuvm on 32 bit.
                 continue;
+              } else if (atoi(os::GetEnvVar("HSA_LOCAL_MEMORY_ENABLE")
+                                  .c_str()) == 0) {
+                // Disable local memory if environment key is not set.
+                continue;
               }
 
               // TODO: frequency value is 0 from KFD.
@@ -178,12 +174,7 @@ void BuildTopology() {
             case HSA_HEAPTYPE_GPU_LDS:
             case HSA_HEAPTYPE_GPU_SCRATCH:
               if (gpu != NULL) {
-                MemoryRegion* region =
-                    new MemoryRegion(false, *gpu, mem_props[mem_idx]);
-
-                gpu->RegisterMemoryProperties(*(region));
-
-                core::Runtime::runtime_singleton_->RegisterMemoryRegion(region);
+                gpu->RegisterMemoryProperties(mem_props[mem_idx]);
               }
               break;
             default:
@@ -210,18 +201,13 @@ void BuildTopology() {
     default_mem_prop.Width = kWidth;
     default_mem_prop.MemoryClockMax = kClockSpeed;
 
-    MemoryRegion* region =
-        new MemoryRegion(true, *cpu, default_mem_prop);
-
     if (cpu != NULL) {
-      cpu->RegisterMemoryProperties(*region);
+      cpu->RegisterMemoryProperties(default_mem_prop);
     }
 
     if (gpu != NULL) {
-      gpu->RegisterMemoryProperties(*region);
+      gpu->RegisterMemoryProperties(default_mem_prop);
     }
-
-    core::Runtime::runtime_singleton_->RegisterMemoryRegion(region);
   }
 }
 
@@ -234,9 +220,11 @@ void Load() {
 
 // Load finalizer and extension library
 #ifdef HSA_LARGE_MODEL
-  std::string extLib[] = {"hsa-runtime-ext64.dll", "libhsa-runtime-ext64.so"};
+  std::string extLib[] = {"hsa-runtime-ext64.dll",
+                          "libhsa-runtime-ext64.so"};
 #else
-  std::string extLib[] = {"hsa-runtime-ext.dll", "libhsa-runtime-ext.so"};
+  std::string extLib[] = {"hsa-runtime-ext.dll",
+                          "libhsa-runtime-ext.so"};
 #endif
   core::Runtime::runtime_singleton_->extensions_.Load(
       extLib[os_index(os::current_os)]);

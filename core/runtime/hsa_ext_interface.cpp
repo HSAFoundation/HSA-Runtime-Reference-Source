@@ -76,28 +76,45 @@ namespace core
 
   ExtensionEntryPoints::ExtensionEntryPoints()
   {
-    InitTable();
-  }
-
-  void ExtensionEntryPoints::InitTable()
-  {
-    table.hsa_ext_program_create = hsa_ext_null;
-    table.hsa_ext_program_destroy = hsa_ext_null;
-    table.hsa_ext_program_add_module = hsa_ext_null;
-    table.hsa_ext_program_iterate_modules = hsa_ext_null;
-    table.hsa_ext_program_get_info = hsa_ext_null;
-    table.hsa_ext_program_finalize = hsa_ext_null;
-    table.hsa_ext_image_get_capability = hsa_ext_null;
-    table.hsa_ext_image_data_get_info = hsa_ext_null;
-    table.hsa_ext_image_create = hsa_ext_null;
-    table.hsa_ext_image_import = hsa_ext_null;
-    table.hsa_ext_image_export = hsa_ext_null;
-    table.hsa_ext_image_copy = hsa_ext_null;
-    table.hsa_ext_image_clear = hsa_ext_null;
-    table.hsa_ext_image_destroy = hsa_ext_null;
-    table.hsa_ext_sampler_create = hsa_ext_null;
-    table.hsa_ext_sampler_destroy = hsa_ext_null;
-    table.hsa_ext_get_image_info_max_dim = hsa_ext_null;
+    hsa_ext_program_create = hsa_ext_null;
+    hsa_ext_program_destroy = hsa_ext_null;
+    hsa_ext_add_module = hsa_ext_null;
+    hsa_ext_finalize_program = hsa_ext_null;
+    hsa_ext_query_program_agent_id = hsa_ext_null;
+    hsa_ext_query_program_agent_count = hsa_ext_null;
+    hsa_ext_query_program_agents = hsa_ext_null;
+    hsa_ext_query_program_module_count = hsa_ext_null;
+    hsa_ext_query_program_modules = hsa_ext_null;
+    hsa_ext_query_program_brig_module = hsa_ext_null;
+    hsa_ext_query_call_convention = hsa_ext_null;
+    hsa_ext_query_symbol_definition = hsa_ext_null;
+    hsa_ext_define_program_allocation_global_variable_address = hsa_ext_null;
+    hsa_ext_query_program_allocation_global_variable_address = hsa_ext_null;
+    hsa_ext_define_agent_allocation_global_variable_address = hsa_ext_null;
+    hsa_ext_query_agent_global_variable_address = hsa_ext_null;
+    hsa_ext_define_readonly_variable_address = hsa_ext_null;
+    hsa_ext_query_readonly_variable_address = hsa_ext_null;
+    hsa_ext_query_kernel_descriptor_address = hsa_ext_null;
+    hsa_ext_query_indirect_function_descriptor_address = hsa_ext_null;
+    hsa_ext_validate_program = hsa_ext_null;
+    hsa_ext_validate_program_module = hsa_ext_null;
+    hsa_ext_serialize_program = hsa_ext_null;
+    hsa_ext_deserialize_program = hsa_ext_null;
+    hsa_ext_extra_query_symbol_definition = hsa_ext_null;
+    hsa_ext_extra_query_program = hsa_ext_null;
+    hsa_ext_image_get_format_capability = hsa_ext_null;
+    hsa_ext_image_get_info = hsa_ext_null;
+    hsa_ext_image_create_handle = hsa_ext_null;
+    hsa_ext_image_import = hsa_ext_null;
+    hsa_ext_image_export = hsa_ext_null;
+    hsa_ext_image_copy = hsa_ext_null;
+    hsa_ext_image_clear = hsa_ext_null;
+    hsa_ext_image_destroy_handle = hsa_ext_null;
+    hsa_ext_sampler_create_handle = hsa_ext_null;
+    hsa_ext_sampler_destroy_handle = hsa_ext_null;
+    hsa_ext_image_clear_generic_data = hsa_ext_null;
+    hsa_ext_image_copy_split_offset = hsa_ext_null;
+    hsa_ext_get_image_info_max_dim = hsa_ext_null;
   }
 
   void ExtensionEntryPoints::Unload() {
@@ -111,7 +128,7 @@ namespace core
       os::CloseLib(libs_[i]);
     }
     libs_.clear();
-    InitTable();
+    new (this) ExtensionEntryPoints();
   }
 
   bool ExtensionEntryPoints::Load(std::string library_name) {
@@ -122,115 +139,340 @@ namespace core
     libs_.push_back(lib);
 
     void* ptr;
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_create");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_create==(ExtTable::hsa_ext_program_create_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_create=(ExtTable::hsa_ext_program_create_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_destroy");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_destroy==(ExtTable::hsa_ext_program_destroy_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_destroy=(ExtTable::hsa_ext_program_destroy_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_add_module");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_add_module==(ExtTable::hsa_ext_program_add_module_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_add_module=(ExtTable::hsa_ext_program_add_module_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_iterate_modules");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_iterate_modules==(ExtTable::hsa_ext_program_iterate_modules_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_iterate_modules=(ExtTable::hsa_ext_program_iterate_modules_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_get_info");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_get_info==(ExtTable::hsa_ext_program_get_info_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_get_info=(ExtTable::hsa_ext_program_get_info_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_program_finalize");
-    if (ptr!=NULL) {
-      assert(table.hsa_ext_program_finalize==(ExtTable::hsa_ext_program_finalize_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_program_finalize=(ExtTable::hsa_ext_program_finalize_t)ptr;
-    }
-
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_get_capability");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_get_capability == (ExtTable::hsa_ext_image_get_capability_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_get_capability=(ExtTable::hsa_ext_image_get_capability_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_data_get_info");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_data_get_info == (ExtTable::hsa_ext_image_data_get_info_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_data_get_info = (ExtTable::hsa_ext_image_data_get_info_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_create");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_create==(ExtTable::hsa_ext_image_create_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_create=(ExtTable::hsa_ext_image_create_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_import");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_import==(ExtTable::hsa_ext_image_import_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_import=(ExtTable::hsa_ext_image_import_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_export");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_export==(ExtTable::hsa_ext_image_export_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_export=(ExtTable::hsa_ext_image_export_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_copy");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_copy==(ExtTable::hsa_ext_image_copy_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_copy=(ExtTable::hsa_ext_image_copy_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_clear");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_clear==(ExtTable::hsa_ext_image_clear_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_clear=(ExtTable::hsa_ext_image_clear_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_image_destroy");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_image_destroy==(ExtTable::hsa_ext_image_destroy_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_image_destroy=(ExtTable::hsa_ext_image_destroy_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_sampler_create");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_sampler_create==(ExtTable::hsa_ext_sampler_create_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_sampler_create=(ExtTable::hsa_ext_sampler_create_t)ptr;
-    }
-    
-    ptr=os::GetExportAddress(lib, "hsa_ext_sampler_destroy");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_sampler_destroy==(ExtTable::hsa_ext_sampler_destroy_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_sampler_destroy=(ExtTable::hsa_ext_sampler_destroy_t)ptr;
-    }
-        
-    ptr=os::GetExportAddress(lib, "hsa_ext_get_image_info_max_dim");
-    if(ptr!=NULL) {
-      assert(table.hsa_ext_get_image_info_max_dim==(ExtTableInternal::hsa_ext_get_image_info_max_dim_t) hsa_ext_null && "Duplicate load of extension import.");
-      table.hsa_ext_get_image_info_max_dim=(ExtTableInternal::hsa_ext_get_image_info_max_dim_t)ptr;
-    }
-
-	ptr = os::GetExportAddress(lib, "Load");
+    ptr = os::GetExportAddress(lib, "hsa_ext_program_create");
     if (ptr != NULL) {
-      ((Load_t)ptr)(&core::hsa_internal_api_table_.table);
+      assert(hsa_ext_program_create == (hsa_ext_program_create_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_program_create = (hsa_ext_program_create_t)ptr;
     }
 
-	return true;
+    ptr = os::GetExportAddress(lib, "hsa_ext_program_destroy");
+    if (ptr != NULL) {
+      assert(hsa_ext_program_destroy ==
+        (hsa_ext_program_destroy_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_program_destroy = (hsa_ext_program_destroy_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_add_module");
+    if (ptr != NULL) {
+      assert(hsa_ext_add_module == (hsa_ext_add_module_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_add_module = (hsa_ext_add_module_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_finalize_program");
+    if (ptr != NULL) {
+      assert(hsa_ext_finalize_program ==
+        (hsa_ext_finalize_program_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_finalize_program = (hsa_ext_finalize_program_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_agent_id");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_agent_id ==
+        (hsa_ext_query_program_agent_id_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_agent_id = (hsa_ext_query_program_agent_id_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_agent_count");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_agent_count ==
+        (hsa_ext_query_program_agent_count_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_agent_count =
+        (hsa_ext_query_program_agent_count_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_agents");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_agents ==
+        (hsa_ext_query_program_agents_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_agents = (hsa_ext_query_program_agents_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_module_count");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_module_count ==
+        (hsa_ext_query_program_module_count_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_module_count =
+        (hsa_ext_query_program_module_count_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_modules");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_modules ==
+        (hsa_ext_query_program_modules_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_modules = (hsa_ext_query_program_modules_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_program_brig_module");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_brig_module ==
+        (hsa_ext_query_program_brig_module_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_brig_module =
+        (hsa_ext_query_program_brig_module_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_call_convention");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_call_convention ==
+        (hsa_ext_query_call_convention_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_call_convention = (hsa_ext_query_call_convention_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_symbol_definition");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_symbol_definition ==
+        (hsa_ext_query_symbol_definition_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_symbol_definition = (hsa_ext_query_symbol_definition_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(
+      lib, "hsa_ext_define_program_allocation_global_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_define_program_allocation_global_variable_address ==
+        (hsa_ext_define_program_allocation_global_variable_address_t)
+        hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_define_program_allocation_global_variable_address =
+        (hsa_ext_define_program_allocation_global_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(
+      lib, "hsa_ext_query_program_allocation_global_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_program_allocation_global_variable_address ==
+        (hsa_ext_query_program_allocation_global_variable_address_t)
+        hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_program_allocation_global_variable_address =
+        (hsa_ext_query_program_allocation_global_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(
+      lib, "hsa_ext_define_agent_allocation_global_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_define_agent_allocation_global_variable_address ==
+        (hsa_ext_define_agent_allocation_global_variable_address_t)
+        hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_define_agent_allocation_global_variable_address =
+        (hsa_ext_define_agent_allocation_global_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib,
+      "hsa_ext_query_agent_global_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_agent_global_variable_address ==
+        (hsa_ext_query_agent_global_variable_address_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_agent_global_variable_address =
+        (hsa_ext_query_agent_global_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_define_readonly_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_define_readonly_variable_address ==
+        (hsa_ext_define_readonly_variable_address_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_define_readonly_variable_address =
+        (hsa_ext_define_readonly_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_readonly_variable_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_readonly_variable_address ==
+        (hsa_ext_query_readonly_variable_address_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_readonly_variable_address =
+        (hsa_ext_query_readonly_variable_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_query_kernel_descriptor_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_kernel_descriptor_address ==
+        (hsa_ext_query_kernel_descriptor_address_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_kernel_descriptor_address =
+        (hsa_ext_query_kernel_descriptor_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(
+      lib, "hsa_ext_query_indirect_function_descriptor_address");
+    if (ptr != NULL) {
+      assert(hsa_ext_query_indirect_function_descriptor_address ==
+        (hsa_ext_query_indirect_function_descriptor_address_t)
+        hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_query_indirect_function_descriptor_address =
+        (hsa_ext_query_indirect_function_descriptor_address_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_validate_program");
+    if (ptr != NULL) {
+      assert(hsa_ext_validate_program ==
+        (hsa_ext_validate_program_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_validate_program = (hsa_ext_validate_program_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_validate_program_module");
+    if (ptr != NULL) {
+      assert(hsa_ext_validate_program_module ==
+        (hsa_ext_validate_program_module_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_validate_program_module = (hsa_ext_validate_program_module_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_serialize_program");
+    if (ptr != NULL) {
+      assert(hsa_ext_serialize_program ==
+        (hsa_ext_serialize_program_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_serialize_program = (hsa_ext_serialize_program_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_deserialize_program");
+    if (ptr != NULL) {
+      assert(hsa_ext_deserialize_program ==
+        (hsa_ext_deserialize_program_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_deserialize_program = (hsa_ext_deserialize_program_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_extra_query_symbol_definition");
+    if (ptr != NULL) {
+      assert(hsa_ext_extra_query_symbol_definition ==
+        (hsa_ext_extra_query_symbol_definition_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_extra_query_symbol_definition =
+        (hsa_ext_extra_query_symbol_definition_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_extra_query_program");
+    if (ptr != NULL) {
+      assert(hsa_ext_extra_query_program ==
+        (hsa_ext_extra_query_program_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_extra_query_program = (hsa_ext_extra_query_program_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_get_format_capability");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_get_format_capability ==
+        (hsa_ext_image_get_format_capability_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_get_format_capability =
+        (hsa_ext_image_get_format_capability_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_get_info");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_get_info == (hsa_ext_image_get_info_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_get_info = (hsa_ext_image_get_info_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_create_handle");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_create_handle ==
+        (hsa_ext_image_create_handle_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_create_handle = (hsa_ext_image_create_handle_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_import");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_import == (hsa_ext_image_import_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_import = (hsa_ext_image_import_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_export");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_export == (hsa_ext_image_export_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_export = (hsa_ext_image_export_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_copy");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_copy == (hsa_ext_image_copy_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_copy = (hsa_ext_image_copy_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_copy_split_offset");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_copy_split_offset ==
+        (hsa_ext_image_copy_split_offset_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_copy_split_offset = (hsa_ext_image_copy_split_offset_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_clear");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_clear == (hsa_ext_image_clear_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_clear = (hsa_ext_image_clear_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_destroy_handle");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_destroy_handle ==
+        (hsa_ext_image_destroy_handle_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_destroy_handle = (hsa_ext_image_destroy_handle_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_sampler_create_handle");
+    if (ptr != NULL) {
+      assert(hsa_ext_sampler_create_handle ==
+        (hsa_ext_sampler_create_handle_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_sampler_create_handle = (hsa_ext_sampler_create_handle_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_sampler_destroy_handle");
+    if (ptr != NULL) {
+      assert(hsa_ext_sampler_destroy_handle ==
+        (hsa_ext_sampler_destroy_handle_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_sampler_destroy_handle = (hsa_ext_sampler_destroy_handle_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_image_clear_generic_data");
+    if (ptr != NULL) {
+      assert(hsa_ext_image_clear_generic_data ==
+        (hsa_ext_image_clear_generic_data_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_image_clear_generic_data =
+        (hsa_ext_image_clear_generic_data_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "hsa_ext_get_image_info_max_dim");
+    if (ptr != NULL) {
+      assert(hsa_ext_get_image_info_max_dim ==
+        (hsa_ext_get_image_info_max_dim_t)hsa_ext_null &&
+        "Duplicate load of extension import.");
+      hsa_ext_get_image_info_max_dim = (hsa_ext_get_image_info_max_dim_t)ptr;
+    }
+
+    ptr = os::GetExportAddress(lib, "Load");
+    if (ptr != NULL) {
+      ((Load_t)ptr)();
+    }
+
+    return true;
   }
 } // namespace core
 
@@ -246,125 +488,275 @@ namespace core
 //}
 //#undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_create_t, index>::type
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_program_create_t, index>::type
 arg_t(0) hsa_ext_program_create(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_create(arg1, arg2, arg3, arg4, arg5);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_program_create(arg1, arg2, arg3, arg4, arg5);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_destroy_t, index>::type
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_program_destroy_t, index>::type
 arg_t(0) hsa_ext_program_destroy(arg_t(1) arg1)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_destroy(arg1);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_program_destroy(arg1);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_add_module_t, index>::type
-arg_t(0) hsa_ext_program_add_module(arg_t(1) arg1, arg_t(2) arg2)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_add_module_t, index>::type
+arg_t(0) hsa_ext_add_module(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_add_module(arg1, arg2);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_add_module(arg1, arg2, arg3);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_iterate_modules_t, index>::type
-arg_t(0) hsa_ext_program_iterate_modules(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_finalize_program_t, index>::type
+arg_t(0) hsa_ext_finalize_program(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7, arg_t(8) arg8, arg_t(9) arg9)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_iterate_modules(arg1, arg2, arg3);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_finalize_program(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_get_info_t, index>::type
-arg_t(0) hsa_ext_program_get_info(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_agent_id_t, index>::type
+arg_t(0) hsa_ext_query_program_agent_id(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_get_info(arg1, arg2, arg3);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_agent_id(arg1, arg2, arg3);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_program_finalize_t, index>::type
-arg_t(0) hsa_ext_program_finalize(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_agent_count_t, index>::type
+arg_t(0) hsa_ext_query_program_agent_count(arg_t(1) arg1, arg_t(2) arg2)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_program_finalize(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_agent_count(arg1, arg2);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_get_capability_t, index>::type
-arg_t(0) hsa_ext_image_get_capability(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_agents_t, index>::type
+arg_t(0) hsa_ext_query_program_agents(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_get_capability(arg1, arg2, arg3, arg4);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_agents(arg1, arg2, arg3);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_data_get_info_t, index>::type
-arg_t(0) hsa_ext_image_data_get_info(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_module_count_t, index>::type
+arg_t(0) hsa_ext_query_program_module_count(arg_t(1) arg1, arg_t(2) arg2)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_data_get_info(arg1, arg2, arg3, arg4);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_module_count(arg1, arg2);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_create_t, index>::type
-arg_t(0) hsa_ext_image_create(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_modules_t, index>::type
+arg_t(0) hsa_ext_query_program_modules(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_create(arg1, arg2, arg3, arg4, arg5);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_modules(arg1, arg2, arg3);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_import_t, index>::type
-arg_t(0) hsa_ext_image_import(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_brig_module_t, index>::type
+arg_t(0) hsa_ext_query_program_brig_module(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_import(arg1, arg2, arg3, arg4, arg5, arg6);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_brig_module(arg1, arg2, arg3);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_export_t, index>::type
-arg_t(0) hsa_ext_image_export(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_call_convention_t, index>::type
+arg_t(0) hsa_ext_query_call_convention(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_export(arg1, arg2, arg3, arg4, arg5, arg6);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_call_convention(arg1, arg2, arg3, arg4);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_copy_t, index>::type
-arg_t(0) hsa_ext_image_copy(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_symbol_definition_t, index>::type
+arg_t(0) hsa_ext_query_symbol_definition(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_copy(arg1, arg2, arg3, arg4, arg5, arg6);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_symbol_definition(arg1, arg2, arg3, arg4, arg5, arg6);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_clear_t, index>::type
-arg_t(0) hsa_ext_image_clear(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_define_program_allocation_global_variable_address_t, index>::type
+arg_t(0) hsa_ext_define_program_allocation_global_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_clear(arg1, arg2, arg3, arg4);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_define_program_allocation_global_variable_address(arg1, arg2, arg3, arg4, arg5);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_image_destroy_t, index>::type
-arg_t(0) hsa_ext_image_destroy(arg_t(1) arg1, arg_t(2) arg2)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_program_allocation_global_variable_address_t, index>::type
+arg_t(0) hsa_ext_query_program_allocation_global_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_image_destroy(arg1, arg2);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_program_allocation_global_variable_address(arg1, arg2, arg3, arg4);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_sampler_create_t, index>::type
-arg_t(0) hsa_ext_sampler_create(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_define_agent_allocation_global_variable_address_t, index>::type
+arg_t(0) hsa_ext_define_agent_allocation_global_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_sampler_create(arg1, arg2, arg3);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_define_agent_allocation_global_variable_address(arg1, arg2, arg3, arg4, arg5, arg6);
 }
 #undef arg_t
 
-#define arg_t(index) arg_type<ExtTable::hsa_ext_sampler_destroy_t, index>::type
-arg_t(0) hsa_ext_sampler_destroy(arg_t(1) arg1, arg_t(2) arg2)
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_agent_global_variable_address_t, index>::type
+arg_t(0) hsa_ext_query_agent_global_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_sampler_destroy(arg1, arg2);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_agent_global_variable_address(arg1, arg2, arg3, arg4, arg5);
 }
 #undef arg_t
 
-//---------------------------------------------------------------------------//
-//  Stubs for internal extension functions
-//---------------------------------------------------------------------------//
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_define_readonly_variable_address_t, index>::type
+arg_t(0) hsa_ext_define_readonly_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_define_readonly_variable_address(arg1, arg2, arg3, arg4, arg5, arg6);
+}
+#undef arg_t
 
-#define arg_t(index) arg_type<core::ExtTableInternal::hsa_ext_get_image_info_max_dim_t, index>::type
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_readonly_variable_address_t, index>::type
+arg_t(0) hsa_ext_query_readonly_variable_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_readonly_variable_address(arg1, arg2, arg3, arg4, arg5);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_kernel_descriptor_address_t, index>::type
+arg_t(0) hsa_ext_query_kernel_descriptor_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_kernel_descriptor_address(arg1, arg2, arg3, arg4);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_query_indirect_function_descriptor_address_t, index>::type
+arg_t(0) hsa_ext_query_indirect_function_descriptor_address(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_query_indirect_function_descriptor_address(arg1, arg2, arg3, arg4);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_validate_program_t, index>::type
+arg_t(0) hsa_ext_validate_program(arg_t(1) arg1, arg_t(2) arg2)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_validate_program(arg1, arg2);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_validate_program_module_t, index>::type
+arg_t(0) hsa_ext_validate_program_module(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_validate_program_module(arg1, arg2, arg3);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_serialize_program_t, index>::type
+arg_t(0) hsa_ext_serialize_program(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_serialize_program(arg1, arg2, arg3, arg4, arg5, arg6);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_deserialize_program_t, index>::type
+arg_t(0) hsa_ext_deserialize_program(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_deserialize_program(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_extra_query_symbol_definition_t, index>::type
+arg_t(0) hsa_ext_extra_query_symbol_definition(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_extra_query_symbol_definition(arg1, arg2, arg3, arg4, arg5);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_extra_query_program_t, index>::type
+arg_t(0) hsa_ext_extra_query_program(arg_t(1) arg1, arg_t(2) arg2)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_extra_query_program(arg1, arg2);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_get_format_capability_t, index>::type
+arg_t(0) hsa_ext_image_get_format_capability(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_get_format_capability(arg1, arg2, arg3, arg4);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_get_info_t, index>::type
+arg_t(0) hsa_ext_image_get_info(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_get_info(arg1, arg2, arg3, arg4);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_create_handle_t, index>::type
+arg_t(0) hsa_ext_image_create_handle(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_create_handle(arg1, arg2, arg3, arg4, arg5);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_import_t, index>::type
+arg_t(0) hsa_ext_image_import(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_import(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_export_t, index>::type
+arg_t(0) hsa_ext_image_export(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_export(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_copy_t, index>::type
+arg_t(0) hsa_ext_image_copy(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_copy(arg1, arg2, arg3, arg4, arg5);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_copy_split_offset_t, index>::type
+arg_t(0) hsa_ext_image_copy_split_offset(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5, arg_t(6) arg6, arg_t(7) arg7)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_copy_split_offset(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_get_image_info_max_dim_t, index>::type
 arg_t(0) hsa_ext_get_image_info_max_dim(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
 {
-  return core::Runtime::runtime_singleton_->extensions_.table.hsa_ext_get_image_info_max_dim(arg1, arg2, arg3);
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_get_image_info_max_dim(arg1, arg2, arg3);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_clear_t, index>::type
+arg_t(0) hsa_ext_image_clear(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_clear(arg1, arg2, arg3, arg4, arg5);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_destroy_handle_t, index>::type
+arg_t(0) hsa_ext_image_destroy_handle(arg_t(1) arg1, arg_t(2) arg2)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_destroy_handle(arg1, arg2);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_sampler_create_handle_t, index>::type
+arg_t(0) hsa_ext_sampler_create_handle(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_sampler_create_handle(arg1, arg2, arg3);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_sampler_destroy_handle_t, index>::type
+arg_t(0) hsa_ext_sampler_destroy_handle(arg_t(1) arg1, arg_t(2) arg2)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_sampler_destroy_handle(arg1, arg2);
+}
+#undef arg_t
+
+#define arg_t(index) arg_type<core::ExtensionEntryPoints::hsa_ext_image_clear_generic_data_t, index>::type
+arg_t(0) hsa_ext_image_clear_generic_data(arg_t(1) arg1, arg_t(2) arg2, arg_t(3) arg3, arg_t(4) arg4, arg_t(5) arg5)
+{
+  return core::Runtime::runtime_singleton_->extensions_.hsa_ext_image_clear_generic_data(arg1, arg2, arg3, arg4, arg5);
 }
 #undef arg_t

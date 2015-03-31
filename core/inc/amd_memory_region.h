@@ -56,8 +56,7 @@
 namespace amd {
 class MemoryRegion : public core::MemoryRegion {
  public:
-  MemoryRegion(bool fine_grain, const core::Agent& owner,
-               const HsaMemoryProperties& mem_props);
+  MemoryRegion(const core::Agent& agent, const HsaMemoryProperties& mem_props);
 
   ~MemoryRegion();
 
@@ -66,13 +65,6 @@ class MemoryRegion : public core::MemoryRegion {
   hsa_status_t Free(void* address, size_t size) const;
 
   hsa_status_t GetInfo(hsa_region_info_t attribute, void* value) const;
-
-  HSAuint64 GetBaseAddress() const { return mem_props_.VirtualBaseAddress; }
-
-  HSAuint64 GetSize() const { return mem_props_.SizeInBytes; }
-
-  hsa_status_t AssignAgent(void* ptr, size_t size, const core::Agent& agent,
-                           hsa_access_permission_t access);
 
   __forceinline bool IsLocalMemory() const {
     return ((mem_props_.HeapType == HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE) ||
@@ -87,26 +79,14 @@ class MemoryRegion : public core::MemoryRegion {
     return mem_props_.HeapType == HSA_HEAPTYPE_GPU_LDS;
   }
 
-  __forceinline bool IsGDS() const {
-    return mem_props_.HeapType == HSA_HEAPTYPE_GPU_GDS;
-  }
-
   __forceinline bool IsScratch() const {
     return mem_props_.HeapType == HSA_HEAPTYPE_GPU_SCRATCH;
   }
 
-  __forceinline const core::Agent* owner() const { return owner_; }
-
  private:
-  const core::Agent* owner_;
-
   const HsaMemoryProperties mem_props_;
 
   HsaMemFlags mem_flag_;
-
-  size_t max_single_alloc_size_;
-
-  static const size_t kPageSize_ = 4096;
 };
 }  // namespace
 

@@ -44,11 +44,12 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <algorithm>
 #include "core/inc/runtime.h"
 #include "core/inc/agent.h"
 #include "core/inc/amd_gpu_agent.h"
 #include "core/inc/signal.h"
-#include "core/inc/thunk.h"
+#include "core/inc/hsa_code_unit.h"
 
 template <class T>
 struct ValidityError;
@@ -93,17 +94,6 @@ struct ValidityError<const T*> {
     if ((ptr) == NULL) return HSA_STATUS_ERROR_OUT_OF_RESOURCES; \
   } while (false)
 
-#define IS_OPEN()                                     \
-  do {                                                \
-    if (!core::Runtime::runtime_singleton_->IsOpen()) \
-      return HSA_STATUS_ERROR_NOT_INITIALIZED;        \
-  } while (false)
-
-template <class T>
-static __forceinline bool IsValid(T* ptr) {
-  return (ptr == NULL) ? NULL : ptr->IsValid();
-}
-
 hsa_status_t HSA_API hsa_ext_get_memory_type(hsa_agent_t agent_handle,
                                              hsa_amd_memory_type_t* type) {
   const core::Agent* agent = core::Agent::Convert(agent_handle);
@@ -116,8 +106,7 @@ hsa_status_t HSA_API hsa_ext_get_memory_type(hsa_agent_t agent_handle,
     return HSA_STATUS_ERROR_INVALID_AGENT;
   }
 
-  const amd::GpuAgentInt* gpu_agent =
-      static_cast<const amd::GpuAgentInt*>(agent);
+  const amd::GpuAgentInt* gpu_agent = static_cast<const amd::GpuAgentInt*>(agent);
 
   *type = gpu_agent->memory_type();
 
@@ -175,77 +164,89 @@ hsa_status_t HSA_API hsa_ext_get_dispatch_times(hsa_agent_t agent_handle,
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
-    hsa_ext_sdma_queue_create(hsa_agent_t agent_handle, size_t buffer_size,
-                              void* buffer_addr, uint64_t* queue_id,
-                              uint32_t** read_ptr, uint32_t** write_ptr,
-                              uint32_t** doorbell) {
-  core::Agent* agent = core::Agent::Convert(agent_handle);
+//===----------------------------------------------------------------------===//
+// HSA Code Unit APIs.                                                        //
+//===----------------------------------------------------------------------===//
 
-  IS_VALID(agent);
+namespace {
+std::vector<hsa_amd_code_unit_t> loaded_code_units;
+} // namespace anonymous
 
-  if (agent->device_type() != core::Agent::kAmdGpuDevice) {
-    return HSA_STATUS_ERROR_INVALID_AGENT;
+hsa_status_t HSA_API hsa_ext_code_unit_load(hsa_runtime_caller_t caller,
+                                            const hsa_agent_t *agent,
+                                            size_t agent_count,
+                                            void *serialized_code_unit,
+                                            size_t serialized_code_unit_size,
+                                            const char *options,
+                                            hsa_ext_symbol_value_callback_t symbol_value,
+                                            hsa_amd_code_unit_t *code_unit) {
+  if (NULL == code_unit) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
-
-  amd::GpuAgentInt* gpu_agent = static_cast<amd::GpuAgentInt*>(agent);
-
-  HsaQueueResource queue_resource = {0};
-  const HSA_QUEUE_TYPE kQueueType_ = HSA_QUEUE_SDMA;
-  if (HSAKMT_STATUS_SUCCESS !=
-      hsaKmtCreateQueue(gpu_agent->node_id(), kQueueType_, 100,
-                        HSA_QUEUE_PRIORITY_MAXIMUM, buffer_addr, buffer_size,
-                        NULL, &queue_resource)) {
+  core::HsaCodeUnit *hsa_code_unit;
+  hsa_status_t hsa_error_code = core::HsaCodeUnit::Create(
+    &hsa_code_unit,
+    caller,
+    agent,
+    agent_count,
+    serialized_code_unit,
+    serialized_code_unit_size,
+    options,
+    symbol_value
+  );
+  if (HSA_STATUS_SUCCESS != hsa_error_code) {
+    return hsa_error_code;
+  }
+  try {
+    loaded_code_units.push_back(core::HsaCodeUnit::Handle(hsa_code_unit));
+  } catch (const std::bad_alloc) {
+    core::HsaCodeUnit::Destroy(hsa_code_unit);
     return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
-
-  *queue_id = queue_resource.QueueId;
-  *read_ptr = queue_resource.Queue_read_ptr;
-  *write_ptr = queue_resource.Queue_write_ptr;
-  *doorbell = queue_resource.Queue_DoorBell;
-
+  *code_unit = core::HsaCodeUnit::Handle(hsa_code_unit);
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
-    hsa_ext_sdma_queue_destroy(hsa_agent_t agent_handle, uint64_t queue_id) {
-  core::Agent* agent = core::Agent::Convert(agent_handle);
-
-  IS_VALID(agent);
-
-  if (agent->device_type() != core::Agent::kAmdGpuDevice) {
-    return HSA_STATUS_ERROR_INVALID_AGENT;
+hsa_status_t HSA_API hsa_ext_code_unit_destroy(hsa_amd_code_unit_t code_unit) {
+  auto code_unit_pointer = std::find(
+    std::begin(loaded_code_units), std::end(loaded_code_units), code_unit
+  );
+  if (code_unit_pointer == std::end(loaded_code_units)) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
+  *code_unit_pointer = 0;
+  return core::HsaCodeUnit::Destroy(core::HsaCodeUnit::Object(code_unit));
+}
 
-  hsaKmtDestroyQueue(queue_id);
+hsa_status_t HSA_API hsa_ext_code_unit_get_info(hsa_amd_code_unit_t code_unit,
+                                                hsa_amd_code_unit_info_t attribute,
+                                                uint32_t index,
+                                                void *value) {
+  auto code_unit_pointer = std::find(
+    std::begin(loaded_code_units), std::end(loaded_code_units), code_unit
+  );
+  if (code_unit_pointer == std::end(loaded_code_units)) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+  return core::HsaCodeUnit::Object(code_unit)->GetInfo(attribute, index, value);
+}
 
+hsa_status_t HSA_API hsa_ext_code_unit_iterator(hsa_runtime_caller_t caller,
+                                                hsa_ext_code_unit_iterator_callback_t code_unit_iterator) {
+  if (NULL == code_unit_iterator) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+  size_t num_loaded_code_units_at_the_moment = loaded_code_units.size();
+  for (size_t i = 0; i < num_loaded_code_units_at_the_moment; ++i) {
+    hsa_status_t hsa_error_code = code_unit_iterator(
+      caller, loaded_code_units[i]
+    );
+    if (HSA_EXT_STATUS_INFO_HALT_ITERATION == (hsa_amd_status_t)hsa_error_code) {
+      return HSA_STATUS_SUCCESS;
+    }
+    if (HSA_STATUS_SUCCESS != hsa_error_code) {
+      return hsa_error_code;
+    }
+  }
   return HSA_STATUS_SUCCESS;
-}
-
-uint32_t HSA_API
-    hsa_ext_signal_wait_any(uint32_t signal_count, hsa_signal_t* hsa_signals,
-                            hsa_signal_condition_t* conds,
-                            hsa_signal_value_t* values, uint64_t timeout_hint,
-                            hsa_wait_state_t wait_hint,
-                            hsa_signal_value_t* satisfying_value) {
-  for (uint i = 0; i < signal_count; i++)
-    assert(IsValid(core::Signal::Convert(hsa_signals[i])) && "Invalid signal.");
-
-  return core::Signal::WaitAny(signal_count, hsa_signals, conds, values,
-                               timeout_hint, wait_hint, satisfying_value);
-}
-
-hsa_status_t HSA_API
-    hsa_ext_async_signal_handler(hsa_signal_t hsa_signal,
-                                 hsa_signal_condition_t cond,
-                                 hsa_signal_value_t value,
-                                 hsa_ext_signal_handler handler, void* arg) {
-  IS_OPEN();
-
-  core::Signal* signal = core::Signal::Convert(hsa_signal);
-  IS_VALID(signal);
-  IS_BAD_PTR(handler);
-
-  return core::Runtime::runtime_singleton_->SetAsyncSignalHandler(
-      hsa_signal, cond, value, handler, arg);
 }

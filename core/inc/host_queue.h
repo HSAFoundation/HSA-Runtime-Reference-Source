@@ -47,16 +47,13 @@
 #ifndef HSA_RUNTIME_CORE_INC_HOST_QUEUE_H_
 #define HSA_RUNTIME_CORE_INC_HOST_QUEUE_H_
 
-#include "core/inc/memory_region.h"
-#include "core/inc/queue.h"
 #include "core/inc/runtime.h"
-#include "core/inc/signal.h"
+#include "core/inc/queue.h"
 
 namespace core {
 class HostQueue : public Queue {
  public:
-  HostQueue(hsa_region_t region, uint32_t ring_size, hsa_queue_type_t type,
-            uint32_t features, hsa_signal_t doorbell_signal);
+  HostQueue(uint32_t ring_size);
 
   ~HostQueue();
 
@@ -159,7 +156,7 @@ class HostQueue : public Queue {
   const uint32_t size_;
   bool active_;
   void* ring_;
-  hsa_signal_t doorbell_signal_;
+  hsa_signal_t signal_;
 
   DISALLOW_COPY_AND_ASSIGN(HostQueue);
 };

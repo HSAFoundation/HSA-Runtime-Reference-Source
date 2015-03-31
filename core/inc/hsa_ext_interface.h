@@ -50,24 +50,97 @@
 #include <string>
 #include <vector>
 
-#include "hsa_api_trace_int.h"
+#include "inc/hsa_ext_image.h"
+#include "inc/hsa_ext_amd.h"
+#include "inc/hsa_ext_finalize.h"
 
 #include "core/util/os.h"
 #include "core/util/utils.h"
 
 namespace core
 {
-  struct ExtTableInternal : public ExtTable
-  {
-    typedef decltype(hsa_ext_get_image_info_max_dim)* hsa_ext_get_image_info_max_dim_t;
-
-    hsa_ext_get_image_info_max_dim_t hsa_ext_get_image_info_max_dim;
-  };
-
 	class ExtensionEntryPoints
 	{
 	public:
-		ExtTableInternal table;
+		typedef decltype(hsa_ext_program_create)* hsa_ext_program_create_t;
+		typedef decltype(hsa_ext_program_destroy)* hsa_ext_program_destroy_t;
+		typedef decltype(hsa_ext_add_module)* hsa_ext_add_module_t;
+		typedef decltype(hsa_ext_finalize_program)* hsa_ext_finalize_program_t;
+		typedef decltype(hsa_ext_query_program_agent_id)* hsa_ext_query_program_agent_id_t;
+		typedef decltype(hsa_ext_query_program_agent_count)* hsa_ext_query_program_agent_count_t;
+		typedef decltype(hsa_ext_query_program_agents)* hsa_ext_query_program_agents_t;
+		typedef decltype(hsa_ext_query_program_module_count)* hsa_ext_query_program_module_count_t;
+		typedef decltype(hsa_ext_query_program_modules)* hsa_ext_query_program_modules_t;
+		typedef decltype(hsa_ext_query_program_brig_module)* hsa_ext_query_program_brig_module_t;
+		typedef decltype(hsa_ext_query_call_convention)* hsa_ext_query_call_convention_t;
+		typedef decltype(hsa_ext_query_symbol_definition)* hsa_ext_query_symbol_definition_t;
+		typedef decltype(hsa_ext_define_program_allocation_global_variable_address)* hsa_ext_define_program_allocation_global_variable_address_t;
+		typedef decltype(hsa_ext_query_program_allocation_global_variable_address)* hsa_ext_query_program_allocation_global_variable_address_t;
+		typedef decltype(hsa_ext_define_agent_allocation_global_variable_address)* hsa_ext_define_agent_allocation_global_variable_address_t;
+		typedef decltype(hsa_ext_query_agent_global_variable_address)* hsa_ext_query_agent_global_variable_address_t;
+		typedef decltype(hsa_ext_define_readonly_variable_address)* hsa_ext_define_readonly_variable_address_t;
+		typedef decltype(hsa_ext_query_readonly_variable_address)* hsa_ext_query_readonly_variable_address_t;
+		typedef decltype(hsa_ext_query_kernel_descriptor_address)* hsa_ext_query_kernel_descriptor_address_t;
+		typedef decltype(hsa_ext_query_indirect_function_descriptor_address)* hsa_ext_query_indirect_function_descriptor_address_t;
+		typedef decltype(hsa_ext_validate_program)* hsa_ext_validate_program_t;
+		typedef decltype(hsa_ext_validate_program_module)* hsa_ext_validate_program_module_t;
+		typedef decltype(hsa_ext_serialize_program)* hsa_ext_serialize_program_t;
+		typedef decltype(hsa_ext_deserialize_program)* hsa_ext_deserialize_program_t;
+		typedef decltype(hsa_ext_extra_query_symbol_definition)* hsa_ext_extra_query_symbol_definition_t;
+		typedef decltype(hsa_ext_extra_query_program)* hsa_ext_extra_query_program_t;
+		typedef decltype(hsa_ext_image_get_format_capability)* hsa_ext_image_get_format_capability_t;
+		typedef decltype(hsa_ext_image_get_info)* hsa_ext_image_get_info_t;
+		typedef decltype(hsa_ext_image_create_handle)* hsa_ext_image_create_handle_t;
+		typedef decltype(hsa_ext_image_import)* hsa_ext_image_import_t;
+		typedef decltype(hsa_ext_image_export)* hsa_ext_image_export_t;
+		typedef decltype(hsa_ext_image_copy)* hsa_ext_image_copy_t;
+		typedef decltype(hsa_ext_image_clear)* hsa_ext_image_clear_t;
+		typedef decltype(hsa_ext_image_destroy_handle)* hsa_ext_image_destroy_handle_t;
+		typedef decltype(hsa_ext_sampler_create_handle)* hsa_ext_sampler_create_handle_t;
+		typedef decltype(hsa_ext_sampler_destroy_handle)* hsa_ext_sampler_destroy_handle_t;
+		typedef decltype(hsa_ext_image_clear_generic_data)* hsa_ext_image_clear_generic_data_t;
+		typedef decltype(hsa_ext_image_copy_split_offset)* hsa_ext_image_copy_split_offset_t;
+		typedef decltype(hsa_ext_get_image_info_max_dim)* hsa_ext_get_image_info_max_dim_t;
+
+		hsa_ext_program_create_t hsa_ext_program_create;
+		hsa_ext_program_destroy_t hsa_ext_program_destroy;
+		hsa_ext_add_module_t hsa_ext_add_module;
+		hsa_ext_finalize_program_t hsa_ext_finalize_program;
+		hsa_ext_query_program_agent_id_t hsa_ext_query_program_agent_id;
+		hsa_ext_query_program_agent_count_t hsa_ext_query_program_agent_count;
+		hsa_ext_query_program_agents_t hsa_ext_query_program_agents;
+		hsa_ext_query_program_module_count_t hsa_ext_query_program_module_count;
+		hsa_ext_query_program_modules_t hsa_ext_query_program_modules;
+		hsa_ext_query_program_brig_module_t hsa_ext_query_program_brig_module;
+		hsa_ext_query_call_convention_t hsa_ext_query_call_convention;
+		hsa_ext_query_symbol_definition_t hsa_ext_query_symbol_definition;
+		hsa_ext_define_program_allocation_global_variable_address_t hsa_ext_define_program_allocation_global_variable_address;
+		hsa_ext_query_program_allocation_global_variable_address_t hsa_ext_query_program_allocation_global_variable_address;
+		hsa_ext_define_agent_allocation_global_variable_address_t hsa_ext_define_agent_allocation_global_variable_address;
+		hsa_ext_query_agent_global_variable_address_t hsa_ext_query_agent_global_variable_address;
+		hsa_ext_define_readonly_variable_address_t hsa_ext_define_readonly_variable_address;
+		hsa_ext_query_readonly_variable_address_t hsa_ext_query_readonly_variable_address;
+		hsa_ext_query_kernel_descriptor_address_t hsa_ext_query_kernel_descriptor_address;
+		hsa_ext_query_indirect_function_descriptor_address_t hsa_ext_query_indirect_function_descriptor_address;
+		hsa_ext_validate_program_t hsa_ext_validate_program;
+		hsa_ext_validate_program_module_t hsa_ext_validate_program_module;
+		hsa_ext_serialize_program_t hsa_ext_serialize_program;
+		hsa_ext_deserialize_program_t hsa_ext_deserialize_program;
+		hsa_ext_extra_query_symbol_definition_t hsa_ext_extra_query_symbol_definition;
+		hsa_ext_extra_query_program_t hsa_ext_extra_query_program;
+		hsa_ext_image_get_format_capability_t hsa_ext_image_get_format_capability;
+		hsa_ext_image_get_info_t hsa_ext_image_get_info;
+		hsa_ext_image_create_handle_t hsa_ext_image_create_handle;
+		hsa_ext_image_import_t hsa_ext_image_import;
+		hsa_ext_image_export_t hsa_ext_image_export;
+		hsa_ext_image_copy_t hsa_ext_image_copy;
+		hsa_ext_image_clear_t hsa_ext_image_clear;
+		hsa_ext_image_destroy_handle_t hsa_ext_image_destroy_handle;
+		hsa_ext_sampler_create_handle_t hsa_ext_sampler_create_handle;
+		hsa_ext_sampler_destroy_handle_t hsa_ext_sampler_destroy_handle;
+		hsa_ext_image_copy_split_offset_t hsa_ext_image_copy_split_offset;
+		hsa_ext_image_clear_generic_data_t hsa_ext_image_clear_generic_data;
+		hsa_ext_get_image_info_max_dim_t hsa_ext_get_image_info_max_dim;
 
 		ExtensionEntryPoints();
 
@@ -75,12 +148,10 @@ namespace core
 		void Unload();
 
 private:
-	    typedef void(*Load_t)(const ::ApiTable* table);
+	    typedef void(*Load_t)();
 	    typedef void(*Unload_t)();
 		  
 	  	std::vector<os::LibHandle> libs_;
-
-      void InitTable();
 		DISALLOW_COPY_AND_ASSIGN(ExtensionEntryPoints);
 	};
 }

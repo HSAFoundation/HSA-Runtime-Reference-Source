@@ -52,27 +52,17 @@
 #include <vector>
 #include <map>
 
+#include "inc/hsa.h"
 #include "core/inc/hsa_ext_interface.h"
-#include "core/inc/hsa_internal.h"
 
 #include "core/inc/agent.h"
 #include "core/inc/memory_region.h"
 #include "core/inc/memory_database.h"
 #include "core/util/utils.h"
 #include "core/util/locks.h"
-#include "core/util/os.h"
-
-//---------------------------------------------------------------------------//
-//    Constants                                                              //
-//---------------------------------------------------------------------------//
-
-#define HSA_ARGUMENT_ALIGN_BYTES 16
-#define HSA_QUEUE_ALIGN_BYTES 64
-#define HSA_PACKET_ALIGN_BYTES 64
 
 namespace core {
 extern bool g_use_interrupt_wait;
-// class Signal;
 
 /// @brief  Singleton for helper library attach/cleanup.
 /// Protects global classes from automatic destruction during process exit.
@@ -94,11 +84,7 @@ class Runtime {
   /// @brief Remove agent from agent list.
   void DestroyAgents();
 
-  /// @brief Insert memory region into memory region list.
-  void RegisterMemoryRegion(MemoryRegion* region);
-
-  /// @brief Remove memory region from list.
-  void DestroyMemoryRegions();
+  bool ExtensionQuery(hsa_extension_t extension);
 
   hsa_status_t GetSystemInfo(hsa_system_info_t attribute, void* value);
 
@@ -111,10 +97,10 @@ class Runtime {
 
   /// @brief Memory registration - tracks and provides page aligned regions to
   /// drivers
-  bool Register(void* ptr, size_t length, bool registerWithDrivers = true);
+  bool Register(void* ptr, size_t length);
 
   /// @brief Remove memory range from the registration list.
-  bool Deregister(void* ptr);
+  void Deregister(void* ptr);
 
   /// @brief Allocate memory on a particular reigon.
   hsa_status_t AllocateMemory(const MemoryRegion* region, size_t size,
@@ -123,24 +109,14 @@ class Runtime {
   /// @brief Free memory previously allocated with AllocateMemory.
   hsa_status_t FreeMemory(void* ptr);
 
-  hsa_status_t AssignMemoryToAgent(void* ptr, const Agent& agent,
-                                   hsa_access_permission_t access);
-
-  hsa_status_t CopyMemory(void* dst, const void* src, size_t size);
-
   /// @brief Backends hookup driver registration APIs in these functions.
   /// The runtime calls this with ranges which are whole pages
   /// and never registers a page more than once.
   bool RegisterWithDrivers(void* ptr, size_t length);
   void DeregisterWithDrivers(void* ptr);
 
-  hsa_status_t SetAsyncSignalHandler(hsa_signal_t signal,
-                                     hsa_signal_condition_t cond,
-                                     hsa_signal_value_t value,
-                                     hsa_ext_signal_handler handler, void* arg);
-
  private:
-  Runtime();
+  Runtime() : ref_count_(0), queue_count_(0) {}
 
   Runtime(const Runtime&);
 
@@ -154,15 +130,12 @@ class Runtime {
 
   struct AllocationRegion {
     const MemoryRegion* region;
-    const Agent* assigned_agent_;
     size_t size;
 
-    AllocationRegion() : region(NULL), assigned_agent_(NULL), size(0) {}
+    AllocationRegion() {}
     AllocationRegion(const MemoryRegion* region_arg, size_t size_arg)
         : region(region_arg), size(size_arg) {}
   };
-
-  const AllocationRegion FindAllocatedRegion(const void* ptr);
 
   // Will be created before any user could call hsa_init but also could be
   // destroyed before incorrectly written programs call hsa_shutdown.
@@ -170,81 +143,18 @@ class Runtime {
 
   KernelMutex kernel_lock_;
 
-  KernelMutex memory_lock_;
-
   volatile uint32_t ref_count_;
 
   // Agent list containing compatible agent in the platform.
   std::vector<Agent*> agents_;
 
-  // Region list containing all physical memory region in the platform.
-  std::vector<MemoryRegion*> regions_;
-
   uint32_t queue_count_;
-
-  uintptr_t system_memory_limit_;
 
   // Contains list of registered memory.
   MemoryDatabase registered_memory_;
 
   // Contains the region, address, and size of previously allocated memory.
-  std::map<const void*, AllocationRegion> allocation_map_;
-
-  struct async_events_control_t {
-    hsa_signal_t wake;
-    os::Thread async_events_thread_;
-    KernelMutex lock;
-    bool exit;
-
-    async_events_control_t() : async_events_thread_(NULL) {}
-    void Shutdown();
-  } async_events_control_;
-
-  struct {
-    std::vector<hsa_signal_t> signal_;
-    std::vector<hsa_signal_condition_t> cond_;
-    std::vector<hsa_signal_value_t> value_;
-    std::vector<hsa_ext_signal_handler> handler_;
-    std::vector<void*> arg_;
-
-    void push_back(hsa_signal_t signal, hsa_signal_condition_t cond,
-                   hsa_signal_value_t value, hsa_ext_signal_handler handler,
-                   void* arg) {
-      signal_.push_back(signal);
-      cond_.push_back(cond);
-      value_.push_back(value);
-      handler_.push_back(handler);
-      arg_.push_back(arg);
-    }
-
-    void copy_index(size_t dst, size_t src) {
-      signal_[dst] = signal_[src];
-      cond_[dst] = cond_[src];
-      value_[dst] = value_[src];
-      handler_[dst] = handler_[src];
-      arg_[dst] = arg_[src];
-    }
-
-    size_t size() { return signal_.size(); }
-
-    void pop_back() {
-      signal_.pop_back();
-      cond_.pop_back();
-      value_.pop_back();
-      handler_.pop_back();
-      arg_.pop_back();
-    }
-
-    void clear() {
-      signal_.clear();
-      cond_.clear();
-      value_.clear();
-      handler_.clear();
-      arg_.clear();
-    }
-
-  } async_events_, new_async_events_;
-  static void async_events_loop(void*);
+  std::map<void*, AllocationRegion> allocation_map_;
 
   // Frees runtime memory when the runtime library is unloaded if safe to do so.
   // Failure to release the runtime indicates an incorrect application but is
@@ -256,6 +166,5 @@ class Runtime {
   void CloseTools();
   std::vector<os::LibHandle> tool_libs_;
 };
-
 }  // namespace core
 #endif  // header guard

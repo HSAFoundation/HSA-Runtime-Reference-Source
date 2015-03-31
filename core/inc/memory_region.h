@@ -49,8 +49,6 @@
 #ifndef HSA_RUNTME_CORE_INC_MEMORY_REGION_H_
 #define HSA_RUNTME_CORE_INC_MEMORY_REGION_H_
 
-#include <vector>
-
 #include "core/inc/runtime.h"
 #include "core/inc/agent.h"
 #include "core/inc/checked.h"
@@ -60,27 +58,22 @@ class Agent;
 
 class MemoryRegion : public Checked<0x9C961F19EE175BB3> {
  public:
-  MemoryRegion(bool fine_grain)
-      : fine_grain_(fine_grain) {}
+  MemoryRegion(const Agent& agent) : agent_(&agent) {}
 
   virtual ~MemoryRegion() {}
 
   // Convert this object into hsa_region_t.
   static __forceinline hsa_region_t Convert(MemoryRegion* region) {
-    const hsa_region_t region_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(region))};
-    return region_handle;
+    return static_cast<hsa_region_t>(reinterpret_cast<uintptr_t>(region));
   }
 
   static __forceinline const hsa_region_t Convert(const MemoryRegion* region) {
-    const hsa_region_t region_handle = {
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(region))};
-    return region_handle;
+    return static_cast<hsa_region_t>(reinterpret_cast<uintptr_t>(region));
   }
 
   // Convert hsa_region_t into MemoryRegion *.
   static __forceinline MemoryRegion* Convert(hsa_region_t region) {
-    return reinterpret_cast<MemoryRegion*>(region.handle);
+    return reinterpret_cast<MemoryRegion*>(region);
   }
 
   virtual hsa_status_t Allocate(size_t size, void** address) const = 0;
@@ -91,13 +84,10 @@ class MemoryRegion : public Checked<0x9C961F19EE175BB3> {
   virtual hsa_status_t GetInfo(hsa_region_info_t attribute,
                                void* value) const = 0;
 
-  virtual hsa_status_t AssignAgent(void* ptr, size_t size, const Agent& agent,
-                                   hsa_access_permission_t access) = 0;
-
-  __forceinline bool fine_grain() const { return fine_grain_; }
+  __forceinline const Agent* agent() const { return agent_; }
 
  private:
-  const bool fine_grain_;
+  const Agent* agent_;
 };
 }  // namespace core
 

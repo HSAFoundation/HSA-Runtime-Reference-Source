@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.0)
+cmake_minimum_required(VERSION 2.8)
 ## GCC 4.8 or higher compiler required.
 
 ###############################################################################
@@ -15,30 +15,32 @@ cmake_minimum_required(VERSION 2.8.0)
 ##          <install_dir>$git clone http://cgit.freedesktop.org/~gabbayo/libhsakmt
 ##          export HSA_BUILD_INC_PATH=<install_dir>/libhsakmt/include 
 ##
-## Library: Go to the libhsakmt folder you cloned in the previous step
-##          Run 'make'
-##          for 64 bit, export HSA_BUILD_LIB_PATH=
-##                                <install_dir>/libhsakmt/build/lnx64a
+## Library: Download libhsakmt.so.1 into <install_dir>/libhsakmt/lib/lnx64 from the link below:
+##          https://github.com/HSAFoundation/HSA-Drivers-Linux-AMD/tree/master/kfd-0.9/libhsakmt/lnx64a
+##          export HSA_BUILD_LIB_PATH=<install_dir>/libhsakmt/lib/lnx64
+##          Create a soft link: ln -s libhsakmt.so.1  libhsakmt.so
 ##
-## The system environment is now ready to build HSA. Please see the
-## "Usage" instructions below.
+## Now it's ready to build, please see the above "Usage" instructions.
+###############################################################################
 
 ###############################################################################
 ## Usage:
-## 1) Create build folder named "debug64" (any name will do) under core
-## 2) Make core/debug64 current folder 
+## 1) Create build folder named "debug64" (any name will do) under hsa/runtime/core
+## 2) Make hsa/runtime/core/debug64 current folder 
 ## 3) Run "cmake ../ && make"
-## libhsa-runtime{64}.so will be in core/debug64 folder.
+## libhsa-runtime{64}.so will be in hsa/runtime/core/debug64 folder.
 ##
 ## Defaults to 64 bit Debug build.
-##    To build Release 64 bit:
+##    To build Release 32 bit:
 ##      export HSA_BUILD_TARGET_TYPE=release
-##    Create another build folder, lets say release64 under core
+##      export HSA_BUILD_TARGET_BITS=32
+##    Create another build folder, lets say release32 under hsa/runtime/core
 ##    and build it from there.
 ##
 ## Clean/Rebuild build:
 ##    * Delete build folder
 ##    * Follow above 1) 2) 3) steps.
+###############################################################################
 
 if(WIN32)
   MESSAGE("-------- Windows build is not supported.")
@@ -105,38 +107,30 @@ if(ISDEBUG)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb")
 endif()
 
-set(CMAKE_SHARED_LINKER_FLAGS "-Wl,-Bdynamic -Wl,-z,noexecstack")
+set(CMAKE_EXE_LINKER_FLAGS "-Wl,-Bdynamic -Wl,-z,noexecstack -Wl ")
 
-set(CMAKE_SKIP_BUILD_RPATH TRUE) 
-
+set(CMAKE_EXE_LINKER_FLAGS "-Wl,-soname=$(CORE_RUNTIME_NAME).so.1 ")
 ##  -------------------------  End Compiler and Linker options ----------------------------
 
 ## Source files.
 set (CORE_SRCS util/lnx/os_linux.cpp)
 set (CORE_SRCS ${CORE_SRCS} util/small_heap.cpp)
-set (CORE_SRCS ${CORE_SRCS} runtime/amd_blit_kernel.cpp)
-set (CORE_SRCS ${CORE_SRCS} runtime/amd_blit_sdma.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_cpu_agent.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_gpu_agent.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_hw_aql_command_processor.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_memory_region.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_memory_registration.cpp)
-set (CORE_SRCS ${CORE_SRCS} runtime/amd_sdma_cmdwriter_kv.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_topology.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/default_signal.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/host_queue.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa_api_trace.cpp)
-set (CORE_SRCS ${CORE_SRCS} runtime/hsa_ext_amd.cpp)
+set (CORE_SRCS ${CORE_SRCS} runtime/hsa_code_unit.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa_ext_interface.cpp)
+set (CORE_SRCS ${CORE_SRCS} runtime/hsa_ext_amd.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/interrupt_signal.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/memory_database.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/runtime.cpp)
-set (CORE_SRCS ${CORE_SRCS} runtime/signal.cpp)
-set (CORE_SRCS ${CORE_SRCS} common/hsa_table_interface.cpp)
-set (CORE_SRCS ${CORE_SRCS} loader/compute_capability.cpp)
-set (CORE_SRCS ${CORE_SRCS} loader/executable.cpp)
-set (CORE_SRCS ${CORE_SRCS} loader/isa.cpp)
 
 ## Include path(s).
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -146,7 +140,5 @@ include_directories($ENV{HSA_BUILD_INC_PATH})
 link_directories($ENV{HSA_BUILD_LIB_PATH})
 
 add_library(${CORE_RUNTIME_NAME} SHARED ${CORE_SRCS})
-
-set_property(TARGET ${CORE_RUNTIME_NAME} PROPERTY SOVERSION 1 )
 
 target_link_libraries(${CORE_RUNTIME_NAME} hsakmt elf c stdc++ dl pthread rt)

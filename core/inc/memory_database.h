@@ -108,18 +108,18 @@ class MemoryDatabase {
   /// @Param: size(Input), specifies the size of the requested block, if size is
   /// less than or equal to zero, the function does nothing and return false.
   /// @Return: bool
-  bool Register(void* ptr, size_t size, bool registerWithDrivers) {
+  bool Register(void* ptr, size_t size) {
     ScopedAcquire<KernelMutex> lock(&lock_);
-    return RegisterImpl(ptr, size, registerWithDrivers);
+    return RegisterImpl(ptr, size);
   }
 
   /// @Brief: Simply acquire the lock and call DeregisterImpl(), for more info,
   /// see DeregisterImpl(void* ptr). This function is thread-safe.
   /// @Param: ptr(Input), specify the start address of being deregisterd block.
   /// @Return: void.
-  bool Deregister(void* ptr) {
+  void Deregister(void* ptr) {
     ScopedAcquire<KernelMutex> lock(&lock_);
-    return DeregisterImpl(ptr);
+    DeregisterImpl(ptr);
   }
 
   /// @Brief: Deregister all the memory regions which are registered before and
@@ -135,13 +135,10 @@ class MemoryDatabase {
 
     // Unregister remaining ranges
     while (requested_ranges_.begin() != requested_ranges_.end())
-      while (!DeregisterImpl(
-                 reinterpret_cast<void*>(requested_ranges_.begin()->first)))
-        ;
+      DeregisterImpl(reinterpret_cast<void*>(requested_ranges_.begin()->first));
 
     // Remove guard entries from page block map
     registered_ranges_.clear();
-    requested_ranges_.clear();
 
     // Reinitialize
     Init();
@@ -170,18 +167,18 @@ class MemoryDatabase {
   void operator delete(void*, void*) {}
 
  private:
+
   /// @Brief: Used as "value" in a map to store registerd region size and
   /// reference count.
   class PageRange {
    public:
     /// @Brief: default Constructor, simply sets all member variables to 0.
-    PageRange() : size_(0), reference_count_(0), toDriver(false) {}
+    PageRange() : size_(0), reference_count_(0) {}
 
     /// @Brief: Constructor to set size_ with parameter and set reference_count_
     /// to 1.
     /// @Param: size(Input), size of the newly registerd memory block.
-    explicit PageRange(size_t size, bool useDriver)
-        : size_(size), reference_count_(1), toDriver(useDriver) {}
+    explicit PageRange(size_t size) : size_(size), reference_count_(1) {}
 
     /// @Brief: Decrease use count and finally if it is 0, return ture.
     /// @Param: void.
@@ -202,52 +199,26 @@ class MemoryDatabase {
 
     /// @Variable: reference count for this block of pages
     size_t reference_count_;
-
-    /// @Variable: if true then the registration should be processed to the
-    /// drivers - is false when recording ranges allocated via HSA a memory
-    /// allocator
-    bool toDriver;
   };
 
   /// @Brief: a structure used as "value" in a map to store requested region
   /// size and its registerd start page address.
   struct Range {
     /// @Brief: Default Constructor, simpley set all member variables to 0.
-    Range() : size(0), start_page(0), ref_count_(0), toDriver(false) {}
+    Range() : size(0), start_page(0) {}
 
     /// @Brief: Constructor used to explicitly set all member variables.
     /// @Param: range_size(Input), specify the size of requested region.
     /// @Param: first_page(Input), specify the address of first page of the
     // requested region.
-    Range(size_t range_size, uintptr_t first_page, bool useDriver)
-        : size(range_size),
-          start_page(first_page),
-          ref_count_(1),
-          toDriver(useDriver) {}
-
-    /// @Brief: Decrease use count and finally if it is 0, return ture.
-    /// @Param: void.
-    /// @Return: bool.
-    bool Release() {
-      ref_count_--;
-      return ref_count_ == 0;
-    }
-
-    /// @Brief: Simply increase reference_count_.
-    /// @Param: void.
-    /// @Return: void.
-    void Retain() { ref_count_++; }
+    Range(size_t range_size, uintptr_t first_page)
+        : size(range_size), start_page(first_page) {}
 
     /// @Variable: size of requested region in bytes
     size_t size;
-
     /// @Variable: start_page, specify the address of first page in overlapped
     /// page blocks (may be prior to the first page of the requested region).
     uintptr_t start_page;
-
-    uint32_t ref_count_;
-
-    bool toDriver;
   };
 
   /// @Brief: Initialize the object content of requested_ranges_and
@@ -256,11 +227,11 @@ class MemoryDatabase {
   /// @Return: void.
   void Init() {
     /// Ensure that there is a prior and a post region for all requests.
-    registered_ranges_[0] = PageRange(1, false);
-    registered_ranges_[UINTPTR_MAX] = PageRange(0, false);
+    registered_ranges_[0] = PageRange(1);
+    registered_ranges_[UINTPTR_MAX] = PageRange(0);
 
-    requested_ranges_[0] = Range(1, 0, true);
-    requested_ranges_[UINTPTR_MAX] = Range(0, UINTPTR_MAX, true);
+    requested_ranges_[0] = Range(1, 0);
+    requested_ranges_[UINTPTR_MAX] = Range(0, UINTPTR_MAX);
   }
 
   /// @Brief: Find if input of address resides in a registered region. If found,
@@ -290,15 +261,15 @@ class MemoryDatabase {
   /// @Param: size(Input), specifies the size of the requested block, if size is
   /// less than or equal to zero, the function does nothing and return false.
   /// @Return: bool
-  bool RegisterImpl(void* ptr, size_t size, bool RegisterWithDrivers);
+  bool RegisterImpl(void* ptr, size_t size);
 
   /// @Brief: Deregister memory block from driver and updates the related
   /// informations stored in requested_ranges_ and registered_ranges_.
   /// @Param: ptr(Input), specify the start address of being deregisterd block.
   /// If ptr is null pointer or a value not equal to one of keys in
   /// requsted_ranges_, the function does nothing and return.
-  /// @Return: true if range was deregistered, false if not.
-  bool DeregisterImpl(void* ptr);
+  /// @Return: void.
+  void DeregisterImpl(void* ptr);
 
   std::map<uintptr_t, Range> requested_ranges_;
   std::map<uintptr_t, PageRange> registered_ranges_;
