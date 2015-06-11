@@ -1,10 +1,10 @@
-#ifndef HSA_RUNTIME_CORE_LOADER_ISA_HPP_
-#define HSA_RUNTIME_CORE_LOADER_ISA_HPP_
+#ifndef HSA_RUNTIME_CORE_ISA_HPP_
+#define HSA_RUNTIME_CORE_ISA_HPP_
 
 #include <cstdint>
 #include <ostream>
 #include <string>
-#include "compute_capability.hpp"
+#include "core/runtime/compute_capability.hpp"
 #include "core/inc/hsa_internal.h"
 
 #define ISA_NAME_AMD_VENDOR      "AMD"
@@ -12,7 +12,6 @@
 #define ISA_NAME_AMD_TOKEN_COUNT 5
 
 namespace core {
-namespace loader {
 
 //===----------------------------------------------------------------------===//
 // Isa.                                                                       //
@@ -85,7 +84,6 @@ private:
   ComputeCapability compute_capability_;
 }; // class Isa
 
-} // namespace loader
 } // namespace core
 
-#endif // HSA_RUNTIME_CORE_LOADER_ISA_HPP_
+#endif // HSA_RUNTIME_CORE_ISA_HPP_

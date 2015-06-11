@@ -69,10 +69,12 @@ class MemoryRegion : public core::MemoryRegion {
 
   HSAuint64 GetBaseAddress() const { return mem_props_.VirtualBaseAddress; }
 
-  HSAuint64 GetSize() const { return mem_props_.SizeInBytes; }
+  HSAuint64 GetPhysicalSize() const { return mem_props_.SizeInBytes; }
+
+  HSAuint64 GetVirtualSize() const { return virtual_size_; }
 
   hsa_status_t AssignAgent(void* ptr, size_t size, const core::Agent& agent,
-                           hsa_access_permission_t access);
+                           hsa_access_permission_t access) const;
 
   __forceinline bool IsLocalMemory() const {
     return ((mem_props_.HeapType == HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE) ||
@@ -105,6 +107,8 @@ class MemoryRegion : public core::MemoryRegion {
   HsaMemFlags mem_flag_;
 
   size_t max_single_alloc_size_;
+
+  HSAuint64 virtual_size_;
 
   static const size_t kPageSize_ = 4096;
 };

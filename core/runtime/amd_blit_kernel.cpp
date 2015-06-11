@@ -13,6 +13,8 @@
 #include "core/util/utils.h"
 
 namespace amd {
+const uint32_t BlitKernel::kGroupSize = 256;
+const size_t BlitKernel::kMaxCopySize = AlignDown(UINT32_MAX, kGroupSize);
 
 BlitKernel::BlitKernel()
     : core::Blit(),
@@ -37,6 +39,11 @@ hsa_status_t BlitKernel::Initialize(const core::Agent& agent) {
     return HSA_STATUS_ERROR;
   }
 
+  // Need queue buffer that can cover the max size of local memory.
+  const uint64_t kGpuVmVaSize = 1ULL << 40;
+  const uint32_t kRequiredQueueSize = NextPow2(static_cast<uint32_t>(
+      std::ceil(static_cast<double>(kGpuVmVaSize) / kMaxCopySize)));
+
   uint32_t max_queue_size = 0;
   status = HSA::hsa_agent_get_info(agent_handle, HSA_AGENT_INFO_QUEUE_MAX_SIZE,
                                    &max_queue_size);
@@ -45,13 +52,19 @@ hsa_status_t BlitKernel::Initialize(const core::Agent& agent) {
     return status;
   }
 
-  status =
-      HSA::hsa_queue_create(agent_handle, max_queue_size, HSA_QUEUE_TYPE_MULTI,
-                            NULL, NULL, UINT_MAX, UINT_MAX, &queue_);
+  if (max_queue_size < kRequiredQueueSize) {
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  }
+
+  status = HSA::hsa_queue_create(agent_handle, kRequiredQueueSize,
+                                 HSA_QUEUE_TYPE_MULTI, NULL, NULL, UINT_MAX,
+                                 UINT_MAX, &queue_);
 
   if (HSA_STATUS_SUCCESS != status) {
     return status;
   }
+
+  queue_bitmask_ = queue_->size - 1;
 
   cached_index_ = 0;
 
@@ -87,8 +100,8 @@ hsa_status_t BlitKernel::Initialize(const core::Agent& agent) {
 
   // Get symbol handle.
   hsa_executable_symbol_t kernel_symbol;
-  status = HSA::hsa_executable_get_symbol(code_executable_, "",
-                                          "am::&__vector_copy_kernel",
+  status = HSA::hsa_executable_get_symbol(code_executable_, NULL,
+                                          "&__vector_copy_kernel",
                                           agent_handle, 0, &kernel_symbol);
   if (HSA_STATUS_SUCCESS != status) {
     return status;
@@ -113,7 +126,7 @@ hsa_status_t BlitKernel::Initialize(const core::Agent& agent) {
 }
 
 hsa_status_t BlitKernel::Destroy(void) {
-  Fence();
+  FenceRelease(0, 0, HSA_FENCE_SCOPE_NONE);
 
   if (queue_ != NULL) {
     HSA::hsa_queue_destroy(queue_);
@@ -126,26 +139,38 @@ hsa_status_t BlitKernel::Destroy(void) {
   return HSA_STATUS_SUCCESS;
 }
 
+static bool IsSystemMemory(void* address) {
+  static const uint64_t kLimitSystem = 1ULL << 48;
+  return (reinterpret_cast<uint64_t>(address) < kLimitSystem);
+}
+
 hsa_status_t BlitKernel::SubmitLinearCopyCommand(void* dst, const void* src,
                                                  size_t size) {
   assert(code_handle_ != 0);
 
-  struct __ALIGNED__(16) KernelArgs {
+  const uint32_t num_copy_packet = static_cast<uint32_t>(
+      std::ceil(static_cast<double>(size) / kMaxCopySize));
+
+  // Reserve write index for copy + fence packet.
+  uint64_t write_index = AcquireWriteIndex(num_copy_packet + 1);
+
+  struct __ALIGNED__(16) KernelArgs{
     const void* src_;
     void* dst_;
     uint64_t size_;
   };
 
-  const uint32_t bitmask = queue_->size - 1;
+  KernelArgs* args = new KernelArgs[num_copy_packet];
+
   size_t total_copy_size = 0;
-  while (total_copy_size < size) {
+  for (uint32_t i = 0; i < num_copy_packet; ++i) {
     hsa_kernel_dispatch_packet_t packet = {0};
 
     static const uint16_t kDispatchPacketHeader =
         (HSA_PACKET_TYPE_KERNEL_DISPATCH << HSA_PACKET_HEADER_TYPE) |
-        (1 << HSA_PACKET_HEADER_BARRIER) |
+        (0 << HSA_PACKET_HEADER_BARRIER) |
         (HSA_FENCE_SCOPE_AGENT << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE) |
-        (HSA_FENCE_SCOPE_AGENT << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE);
+        (HSA_FENCE_SCOPE_NONE << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE);
 
     packet.header = kDispatchPacketHeader;
 
@@ -153,48 +178,55 @@ hsa_status_t BlitKernel::SubmitLinearCopyCommand(void* dst, const void* src,
     packet.private_segment_size = code_private_segment_size_;
 
     // Setup arguments.
-    static const size_t kMaxCopySize = UINT32_MAX;
     const uint32_t copy_size =
         static_cast<uint32_t>(std::min((size - total_copy_size), kMaxCopySize));
 
     void* cur_dst = static_cast<char*>(dst) + total_copy_size;
     const void* cur_src = static_cast<const char*>(src) + total_copy_size;
 
-    KernelArgs args = {0};
+    assert(IsMultipleOf(&args[i], 16));
 
-    args.src_ = cur_src;
-    args.dst_ = cur_dst;
-    args.size_ = copy_size;
+    args[i].src_ = cur_src;
+    args[i].dst_ = cur_dst;
+    args[i].size_ = copy_size;
 
-    packet.kernarg_address = &args;
+    packet.kernarg_address = &args[i];
 
     // Setup working size.
     const int kNumDimension = 1;
     packet.setup = kNumDimension << HSA_KERNEL_DISPATCH_PACKET_SETUP_DIMENSIONS;
-    packet.grid_size_x = AlignUp(static_cast<uint32_t>(copy_size), 256);
+    packet.grid_size_x = AlignUp(static_cast<uint32_t>(copy_size), kGroupSize);
     packet.grid_size_y = packet.grid_size_z = 1;
-    packet.workgroup_size_x = 256;
+    packet.workgroup_size_x = kGroupSize;
     packet.workgroup_size_y = packet.workgroup_size_z = 1;
 
-    // Reserve write index.
-    uint64_t write_index = AcquireWriteIndex();
+    // This assert to make sure kMaxCopySize is not changed to a number that
+    // could cause overflow to packet.grid_size_x.
+    assert(packet.grid_size_x >= copy_size);
 
     // Populate queue buffer with AQL packet.
     hsa_kernel_dispatch_packet_t* queue_buffer =
         reinterpret_cast<hsa_kernel_dispatch_packet_t*>(queue_->base_address);
-    queue_buffer[write_index & bitmask] = packet;
-
-    // Launch packet.
-    ReleaseWriteIndex(write_index);
+    queue_buffer[(write_index + i) & queue_bitmask_] = packet;
 
     total_copy_size += copy_size;
   }
 
-  return Fence();
+  // Launch copy and fence packet.
+  const hsa_fence_scope_t fence_scope =
+      (IsSystemMemory(dst)) ? HSA_FENCE_SCOPE_SYSTEM : HSA_FENCE_SCOPE_AGENT;
+  hsa_status_t status = FenceRelease(write_index, num_copy_packet, fence_scope);
+  
+  delete[] args;
+
+  return status;
 }
 
-uint64_t BlitKernel::AcquireWriteIndex() {
-  uint64_t write_index = HSA::hsa_queue_add_write_index_acq_rel(queue_, 1);
+uint64_t BlitKernel::AcquireWriteIndex(uint32_t num_packet) {
+  assert(queue_->size >= num_packet);
+
+  uint64_t write_index =
+      HSA::hsa_queue_add_write_index_acq_rel(queue_, num_packet);
 
   while (true) {
     // Wait until we have room in the queue;
@@ -207,28 +239,31 @@ uint64_t BlitKernel::AcquireWriteIndex() {
   return write_index;
 }
 
-void BlitKernel::ReleaseWriteIndex(uint64_t write_index) {
+void BlitKernel::ReleaseWriteIndex(uint64_t write_index, uint32_t num_packet) {
   // Launch packet.
   while (true) {
     // Make sure that the address before ::current_offset is already released.
     // Otherwise the packet processor may read invalid packets.
     uint64_t expected_offset = write_index;
     if (std::atomic_compare_exchange_weak_explicit(
-            &cached_index_, &expected_offset, write_index + 1,
+            &cached_index_, &expected_offset, write_index + num_packet,
             std::memory_order_relaxed, std::memory_order_relaxed)) {
-      // Update doorbel register.
-      HSA::hsa_signal_store_release(queue_->doorbell_signal, write_index);
+      // Update doorbel register with last packet id.
+      HSA::hsa_signal_store_release(queue_->doorbell_signal,
+                                    write_index + num_packet - 1);
       break;
     }
   }
 }
 
-hsa_status_t BlitKernel::Fence() {
+hsa_status_t BlitKernel::FenceRelease(uint64_t write_index,
+                                      uint32_t num_copy_packet,
+                                      hsa_fence_scope_t fence) {
   const uint16_t kBarrierPacketHeader =
       (HSA_PACKET_TYPE_BARRIER_AND << HSA_PACKET_HEADER_TYPE) |
       (1 << HSA_PACKET_HEADER_BARRIER) |
       (HSA_FENCE_SCOPE_NONE << HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE) |
-      (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE);
+      (fence << HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE);
 
   hsa_barrier_and_packet_t packet = {0};
   packet.header = kBarrierPacketHeader;
@@ -241,18 +276,19 @@ hsa_status_t BlitKernel::Fence() {
   }
   packet.completion_signal = kernel_signal;
 
-  const uint32_t bitmask = queue_->size - 1;
-
-  // Reserve write index.
-  uint64_t write_index = AcquireWriteIndex();
+  if (num_copy_packet == 0) {
+    assert(write_index == 0);
+    // Reserve write index.
+    write_index = AcquireWriteIndex(1);
+  }
 
   // Populate queue buffer with AQL packet.
   hsa_barrier_and_packet_t* queue_buffer =
       reinterpret_cast<hsa_barrier_and_packet_t*>(queue_->base_address);
-  queue_buffer[write_index & bitmask] = packet;
+  queue_buffer[(write_index + num_copy_packet) & queue_bitmask_] = packet;
 
   // Launch packet.
-  ReleaseWriteIndex(write_index);
+  ReleaseWriteIndex(write_index, num_copy_packet + 1);
 
   // Wait for the packet to finish.
   if (HSA::hsa_signal_wait_acquire(packet.completion_signal,

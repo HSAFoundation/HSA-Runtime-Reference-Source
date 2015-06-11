@@ -40,15 +40,16 @@ class BlitKernel : public core::Blit {
  private:
   /// Reserve a slot in the queue buffer. The call will wait until the queue
   /// buffer has a room.
-  uint64_t AcquireWriteIndex();
+  uint64_t AcquireWriteIndex(uint32_t num_packet);
 
   /// Update the queue doorbell register with ::write_index. This
   /// function also serializes concurrent doorbell update to ensure that the
   /// packet processor doesn't get invalid packet.
-  void ReleaseWriteIndex(uint64_t write_index);
+  void ReleaseWriteIndex(uint64_t write_index, uint32_t num_packet);
 
   /// Wait until all packets are finished.
-  hsa_status_t Fence();
+  hsa_status_t FenceRelease(uint64_t write_index, uint32_t num_copy_packet,
+                            hsa_fence_scope_t fence);
 
   /// Handles to the vector copy kernel.
   hsa_executable_t code_executable_;
@@ -58,9 +59,13 @@ class BlitKernel : public core::Blit {
 
   /// AQL queue for submitting the vector copy kernel.
   hsa_queue_t* queue_;
+  uint32_t queue_bitmask_;
 
   /// Index to track concurrent kernel launch.
   volatile std::atomic<uint64_t> cached_index_;
+
+  static const size_t kMaxCopySize;
+  static const uint32_t kGroupSize;
 };
 }  // namespace amd
 

@@ -107,24 +107,20 @@ hsa_ext_private_amd.h(cpp)
 
 The device specific layer contains implementations of the C++ interface classes which implement HSA functionality for AMD 7000 series APUs.
 
-#### Unimplemented functionality
+mplemented functionality
 
 * The following queries are not implemented:
-     * hsa_code_symbol_get_info: HSA_CODE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_CODE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-     * hsa_executable_symbol_get_info: HSA_EXECUTABLE_SYMBOL_INFO_VARIABLE_ALIGNMENT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_OBJECT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
-     * hsa_isa_get_info: HSA_ISA_INFO_CALL_CONVENTION_COUNT, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONT_SIZE, HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONTS_PER_COMPUTE_UNIT
+  ** hsa_code_symbol_get_info: HSA_CODE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
+  ** hsa_executable_symbol_get_info: HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_OBJECT, HSA_EXECUTABLE_SYMBOL_INFO_INDIRECT_FUNCTION_CALL_CONVENTION
 
 #### Known Issues
 
-* Signals do not support multiple concurrent HOST waiters unless the the environment variable HSA_ENABLE_INTTERUPT=0.
+* Error handling/reporting during AQL packet processing or execution is not fully supported, as a result the spread of failures may not be localized to the queue.
+* Power-efficient signals (default operation) have some race conditions when used in multiple queues or multiple threads and require HSA_ENABLE_INTERRUPT=0 to eliminate them.
+* Max total coarse grain region limit is 8GB.
 * hsa_agent_get_exception_policies is not implemented.
 * Image import/export/copy/fill only support image created with memory from host accessible region.
-* Coarse grain memory usage may claim one user mode queue internally to do memory copy and reduce the number of max queue that can be created.
-* hsa_memory_allocate can an return invalid status when an allocation size of 0 bytes is specified.
 * hsa_system_get_extension_table is not implemented for HSA_EXTENSION_AMD_PROFILER.
-* hsa_ext_image_copy only support source and destination with the same image format. It does not support SRGBA to linear RGBA conversion and vice versa.
-* Acquire and release only synchronize on segment of the operation, matchng SysArch 1.0 provisonal.
-* Code objects can only be loaded once.
 
 ### Disclaimer
 

@@ -194,9 +194,10 @@ hsa_status_t Runtime::GetSystemInfo(hsa_system_info_t attribute, void* value) {
       break;
     }
     case HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY: {
-      HsaClockCounters clocks;
-      hsaKmtGetClockCounters(0, &clocks);
-      *(uint64_t*)value = clocks.SystemClockFrequencyHz;
+      assert(sys_clock_freq_ != 0 &&
+             "Use of HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY before HSA "
+             "initialization completes.");
+      *(uint64_t*)value = sys_clock_freq_;
       break;
     }
     case HSA_SYSTEM_INFO_SIGNAL_MAX_WAIT:
@@ -219,11 +220,11 @@ hsa_status_t Runtime::GetSystemInfo(hsa_system_info_t attribute, void* value) {
     case HSA_SYSTEM_INFO_EXTENSIONS:
       memset(value, 0, sizeof(uint8_t) * 128);
 
-      if (extensions_.table.hsa_ext_program_finalize != NULL) {
+      if (extensions_.table.hsa_ext_program_finalize_fn != NULL) {
         *((uint8_t*)value) = 1 << HSA_EXTENSION_FINALIZER;
       }
 
-      if (extensions_.table.hsa_ext_image_create != NULL) {
+      if (extensions_.table.hsa_ext_image_create_fn != NULL) {
         *((uint8_t*)value) |= 1 << HSA_EXTENSION_IMAGES;
       }
 
@@ -308,7 +309,7 @@ hsa_status_t Runtime::FreeMemory(void* ptr) {
   {
     ScopedAcquire<KernelMutex> lock(&memory_lock_);
 
-    std::map<const void*, AllocationRegion>::iterator it =
+    std::map<const void*, AllocationRegion>::const_iterator it =
         allocation_map_.find(ptr);
 
     if (it == allocation_map_.end()) {
@@ -333,19 +334,29 @@ hsa_status_t Runtime::AssignMemoryToAgent(void* ptr, const Agent& agent,
     return HSA_STATUS_SUCCESS;
   }
 
-  const Runtime::AllocationRegion allocation_region = FindAllocatedRegion(ptr);
-  
-  if (allocation_region.region == NULL || allocation_region.size == 0) {
-    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  Runtime::AllocationRegion allocation_region;
+  {
+    ScopedAcquire<KernelMutex> lock(&memory_lock_);
+    std::map<const void*, AllocationRegion>::const_iterator it =
+        allocation_map_.find(ptr);
+
+    if (it == allocation_map_.end()) {
+      return HSA_STATUS_ERROR;
+    }
+
+    allocation_region = it->second;
+
+    assert(allocation_region.region != NULL);
+    assert(allocation_region.size != 0);
   }
 
   if (allocation_region.assigned_agent_ == &agent) {
+    // Already assigned to the selected agent.
     return HSA_STATUS_SUCCESS;
   }
 
-  MemoryRegion* region = const_cast<MemoryRegion*>(allocation_region.region);
-  hsa_status_t status =
-      region->AssignAgent(ptr, allocation_region.size, agent, access);
+  hsa_status_t status = allocation_region.region->AssignAgent(
+      ptr, allocation_region.size, agent, access);
 
   if (status == HSA_STATUS_SUCCESS) {
     ScopedAcquire<KernelMutex> lock(&memory_lock_);
@@ -402,7 +413,7 @@ void Runtime::DeregisterWithDrivers(void* ptr) {
   amd::DeregisterKfdMemory(ptr);
 }
 
-Runtime::Runtime() : ref_count_(0), queue_count_(0) {
+Runtime::Runtime() : ref_count_(0), queue_count_(0), sys_clock_freq_(0) {
   system_memory_limit_ =
       os::GetUserModeVirtualMemoryBase() + os::GetUserModeVirtualMemorySize();
 }
@@ -413,6 +424,11 @@ void Runtime::Load() {
   g_use_interrupt_wait = (interrupt != "0");
 
   amd::Load();
+
+  // Cache system clock frequency
+  HsaClockCounters clocks;
+  hsaKmtGetClockCounters(0, &clocks);
+  sys_clock_freq_ = clocks.SystemClockFrequencyHz;
 
   // Load tools libraries
   LoadTools();
@@ -502,7 +518,7 @@ const Runtime::AllocationRegion Runtime::FindAllocatedRegion(const void* ptr) {
 
   // Find the last element in the allocation list that has address
   // less or equal to ptr.
-  std::map<const void*, AllocationRegion>::iterator it =
+  std::map<const void*, AllocationRegion>::const_iterator it =
       allocation_map_.upper_bound(ptr);
 
   if (it == allocation_map_.begin()) {
@@ -536,7 +552,7 @@ void Runtime::async_events_control_t::Shutdown() {
 hsa_status_t Runtime::SetAsyncSignalHandler(hsa_signal_t signal,
                                             hsa_signal_condition_t cond,
                                             hsa_signal_value_t value,
-                                            hsa_ext_signal_handler handler,
+                                            hsa_amd_signal_handler handler,
                                             void* arg) {
   // Asyncronous signal handler is only supported when KFD events are on.
   if (!core::g_use_interrupt_wait) return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
@@ -582,7 +598,7 @@ void Runtime::async_events_loop(void*) {
   while (!async_events_control_.exit) {
     // Wait for a signal
     hsa_signal_value_t value;
-    uint32_t index = hsa_ext_signal_wait_any(
+    uint32_t index = hsa_amd_signal_wait_any(
         uint32_t(async_events_.size()), &async_events_.signal_[0],
         &async_events_.cond_[0], &async_events_.value_[0], uint64_t(-1),
         HSA_WAIT_STATE_BLOCKED, &value);

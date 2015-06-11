@@ -92,7 +92,7 @@ class MemoryRegion : public Checked<0x9C961F19EE175BB3> {
                                void* value) const = 0;
 
   virtual hsa_status_t AssignAgent(void* ptr, size_t size, const Agent& agent,
-                                   hsa_access_permission_t access) = 0;
+                                   hsa_access_permission_t access) const = 0;
 
   __forceinline bool fine_grain() const { return fine_grain_; }
 

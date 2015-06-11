@@ -104,8 +104,11 @@ static __forceinline bool IsValid(T* ptr) {
   return (ptr == NULL) ? NULL : ptr->IsValid();
 }
 
-hsa_status_t HSA_API hsa_ext_get_memory_type(hsa_agent_t agent_handle,
-                                             hsa_amd_memory_type_t* type) {
+hsa_status_t HSA_API
+    hsa_amd_coherency_get_type(hsa_agent_t agent_handle,
+                               hsa_amd_coherency_type_t* type) {
+  IS_OPEN();
+
   const core::Agent* agent = core::Agent::Convert(agent_handle);
 
   IS_VALID(agent);
@@ -119,16 +122,23 @@ hsa_status_t HSA_API hsa_ext_get_memory_type(hsa_agent_t agent_handle,
   const amd::GpuAgentInt* gpu_agent =
       static_cast<const amd::GpuAgentInt*>(agent);
 
-  *type = gpu_agent->memory_type();
+  *type = gpu_agent->current_coherency_type();
 
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_ext_set_memory_type(hsa_agent_t agent_handle,
-                                             hsa_amd_memory_type_t type) {
+hsa_status_t HSA_API hsa_amd_coherency_set_type(hsa_agent_t agent_handle,
+                                                hsa_amd_coherency_type_t type) {
+  IS_OPEN();
+
   core::Agent* agent = core::Agent::Convert(agent_handle);
 
   IS_VALID(agent);
+
+  if (type < HSA_AMD_COHERENCY_TYPE_COHERENT ||
+      type > HSA_AMD_COHERENCY_TYPE_NONCOHERENT) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
 
   if (agent->device_type() != core::Agent::kAmdGpuDevice) {
     return HSA_STATUS_ERROR_INVALID_AGENT;
@@ -136,14 +146,17 @@ hsa_status_t HSA_API hsa_ext_set_memory_type(hsa_agent_t agent_handle,
 
   amd::GpuAgent* gpu_agent = static_cast<amd::GpuAgent*>(agent);
 
-  if (!gpu_agent->memory_type(type)) {
+  if (!gpu_agent->current_coherency_type(type)) {
     return HSA_STATUS_ERROR;
   }
 
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_ext_set_profiling(hsa_queue_t* queue, int enable) {
+hsa_status_t HSA_API
+    hsa_amd_profiling_set_profiler_enabled(hsa_queue_t* queue, int enable) {
+  IS_OPEN();
+
   core::Queue* cmd_queue = core::Queue::Convert(queue);
 
   IS_VALID(cmd_queue);
@@ -153,14 +166,18 @@ hsa_status_t HSA_API hsa_ext_set_profiling(hsa_queue_t* queue, int enable) {
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_ext_get_dispatch_times(hsa_agent_t agent_handle,
-                                                hsa_signal_t hsa_signal,
-                                                hsa_amd_dispatch_time_t* time) {
+hsa_status_t HSA_API hsa_amd_profiling_get_dispatch_time(
+    hsa_agent_t agent_handle, hsa_signal_t hsa_signal,
+    hsa_amd_profiling_dispatch_time_t* time) {
+  IS_OPEN();
+
+  IS_BAD_PTR(time);
+
   core::Agent* agent = core::Agent::Convert(agent_handle);
 
-  core::Signal* signal = core::Signal::Convert(hsa_signal);
-
   IS_VALID(agent);
+
+  core::Signal* signal = core::Signal::Convert(hsa_signal);
 
   IS_VALID(signal);
 
@@ -176,16 +193,26 @@ hsa_status_t HSA_API hsa_ext_get_dispatch_times(hsa_agent_t agent_handle,
 }
 
 hsa_status_t HSA_API
-    hsa_ext_sdma_queue_create(hsa_agent_t agent_handle, size_t buffer_size,
+    hsa_amd_queue_sdma_create(hsa_agent_t agent_handle, size_t buffer_size,
                               void* buffer_addr, uint64_t* queue_id,
                               uint32_t** read_ptr, uint32_t** write_ptr,
                               uint32_t** doorbell) {
+  IS_OPEN();
+
+  static const size_t kPageSize = 4096;
+
+  if (!IsMultipleOf(buffer_size, kPageSize) ||
+      !IsMultipleOf(buffer_addr, kPageSize) || queue_id == NULL ||
+      read_ptr == NULL || write_ptr == NULL || doorbell == NULL) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+
   core::Agent* agent = core::Agent::Convert(agent_handle);
 
   IS_VALID(agent);
 
   if (agent->device_type() != core::Agent::kAmdGpuDevice) {
-    return HSA_STATUS_ERROR_INVALID_AGENT;
+    return HSA_STATUS_ERROR_INVALID_QUEUE_CREATION;
   }
 
   amd::GpuAgentInt* gpu_agent = static_cast<amd::GpuAgentInt*>(agent);
@@ -207,23 +234,18 @@ hsa_status_t HSA_API
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
-    hsa_ext_sdma_queue_destroy(hsa_agent_t agent_handle, uint64_t queue_id) {
-  core::Agent* agent = core::Agent::Convert(agent_handle);
+hsa_status_t HSA_API hsa_amd_queue_sdma_destroy(uint64_t queue_id) {
+  IS_OPEN();
 
-  IS_VALID(agent);
-
-  if (agent->device_type() != core::Agent::kAmdGpuDevice) {
-    return HSA_STATUS_ERROR_INVALID_AGENT;
+  if (HSAKMT_STATUS_SUCCESS != hsaKmtDestroyQueue(queue_id)) {
+    return HSA_STATUS_ERROR_INVALID_QUEUE;
   }
-
-  hsaKmtDestroyQueue(queue_id);
 
   return HSA_STATUS_SUCCESS;
 }
 
 uint32_t HSA_API
-    hsa_ext_signal_wait_any(uint32_t signal_count, hsa_signal_t* hsa_signals,
+    hsa_amd_signal_wait_any(uint32_t signal_count, hsa_signal_t* hsa_signals,
                             hsa_signal_condition_t* conds,
                             hsa_signal_value_t* values, uint64_t timeout_hint,
                             hsa_wait_state_t wait_hint,
@@ -236,10 +258,10 @@ uint32_t HSA_API
 }
 
 hsa_status_t HSA_API
-    hsa_ext_async_signal_handler(hsa_signal_t hsa_signal,
+    hsa_amd_signal_async_handler(hsa_signal_t hsa_signal,
                                  hsa_signal_condition_t cond,
                                  hsa_signal_value_t value,
-                                 hsa_ext_signal_handler handler, void* arg) {
+                                 hsa_amd_signal_handler handler, void* arg) {
   IS_OPEN();
 
   core::Signal* signal = core::Signal::Convert(hsa_signal);

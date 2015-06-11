@@ -96,7 +96,10 @@ MemoryRegion::MemoryRegion(bool fine_grain, const core::Agent& owner,
     : core::MemoryRegion(fine_grain),
       owner_(&owner),
       mem_props_(mem_props),
-      max_single_alloc_size_(0) {
+      max_single_alloc_size_(0),
+      virtual_size_(0) {
+  virtual_size_ = GetPhysicalSize();
+
   mem_flag_.Value = 0;
   if (IsLocalMemory()) {
     mem_flag_.ui32.PageSize = HSA_PAGE_SIZE_4KB;
@@ -105,21 +108,31 @@ MemoryRegion::MemoryRegion(bool fine_grain, const core::Agent& owner,
     mem_flag_.ui32.NonPaged = 1;
 
     char* char_end = NULL;
-    const HSAuint64 user_max_size = static_cast<HSAuint64>(strtoull(
+    HSAuint64 max_alloc_size = static_cast<HSAuint64>(strtoull(
         os::GetEnvVar("HSA_LOCAL_MEMORY_MAX_ALLOC").c_str(), &char_end, 10));
-    max_single_alloc_size_ = static_cast<size_t>(
-        std::max(user_max_size, mem_props_.SizeInBytes / 4));
-    max_single_alloc_size_ = AlignUp(max_single_alloc_size_, kPageSize_);
-    max_single_alloc_size_ = std::min(
-        static_cast<size_t>(mem_props_.SizeInBytes), max_single_alloc_size_);
+    max_alloc_size = std::max(max_alloc_size, GetPhysicalSize() / 4);
+    max_alloc_size = std::min(max_alloc_size, GetPhysicalSize());
+
+    max_single_alloc_size_ =
+        AlignDown(static_cast<size_t>(max_alloc_size), kPageSize_);
+
+    static const HSAuint64 kGpuVmSize = (1ULL << 40);
+    virtual_size_ = kGpuVmSize;
   } else if (IsSystem()) {
     mem_flag_.ui32.PageSize = HSA_PAGE_SIZE_4KB;
     mem_flag_.ui32.NoSubstitute = 1;
     mem_flag_.ui32.HostAccess = 1;
     mem_flag_.ui32.CachePolicy = HSA_CACHING_CACHED;
-    
-    max_single_alloc_size_ = mem_props_.SizeInBytes;
+
+    max_single_alloc_size_ =
+        AlignDown(static_cast<size_t>(GetPhysicalSize()), kPageSize_);
+
+    virtual_size_ = os::GetUserModeVirtualMemorySize();
   }
+
+  assert(GetVirtualSize() != 0);
+  assert(GetPhysicalSize() <= GetVirtualSize());
+  assert(IsMultipleOf(max_single_alloc_size_, kPageSize_));
 }
 
 MemoryRegion::~MemoryRegion() {}
@@ -136,12 +149,23 @@ hsa_status_t MemoryRegion::Allocate(size_t size, void** address) const {
 
   *address = amd::AllocateKfdMemory(mem_flag_, node_id, size);
 
-  if (*address != NULL && IsSystem()) {
-    amd::MakeKfdMemoryResident(*address, size);
+  if (*address != NULL) {
+    if (IsSystem()) {
+      amd::MakeKfdMemoryResident(*address, size);
+    } else if (IsLocalMemory()) {
+      // TODO: remove immediate pinning on local memory when HSA API to
+      // explicitly unpin memory is available.
+      if (!amd::MakeKfdMemoryResident(*address, size)) {
+        amd::FreeKfdMemory(*address, size);
+        *address = NULL;
+        return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+      }
+    }
+
+    return HSA_STATUS_SUCCESS;
   }
 
-  return (*address != NULL) ? HSA_STATUS_SUCCESS
-                            : HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
 }
 
 hsa_status_t MemoryRegion::Free(void* address, size_t size) const {
@@ -152,16 +176,8 @@ hsa_status_t MemoryRegion::Free(void* address, size_t size) const {
   return HSA_STATUS_SUCCESS;
 }
 
-static __forceinline uint32_t
-    CalculateDDR3Bandwidth(uint32_t clock, uint32_t width) {
-  // clock * 4 (bus clock multiplier) * 2 (double data rate) * width (in bits) /
-  // 8 (bits in byte)
-  return clock * width;
-}
-
 hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
                                    void* value) const {
-  uint32_t bandwidth_multiplier = 1;
   switch (attribute) {
     case HSA_REGION_INFO_SEGMENT:
       switch (mem_props_.HeapType) {
@@ -173,12 +189,8 @@ hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
         case HSA_HEAPTYPE_GPU_LDS:
           *((hsa_region_segment_t*)value) = HSA_REGION_SEGMENT_GROUP;
           break;
-        case HSA_HEAPTYPE_GPU_SCRATCH:
-          *((hsa_region_segment_t*)value) = HSA_REGION_SEGMENT_SPILL;
-          break;
         default:
-          assert(false &&
-                 "Memory region should only be global, group, or scratch");
+          assert(false && "Memory region should only be global, group");
           break;
       }
       break;
@@ -198,7 +210,17 @@ hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
       }
       break;
     case HSA_REGION_INFO_SIZE:
-      *((size_t*)value) = static_cast<size_t>(mem_props_.SizeInBytes);
+      switch (mem_props_.HeapType) {
+        case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
+        case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
+          // TODO: report the actual physical size of local memory until API to
+          // explicitly unpin memory is available.
+          *((size_t*)value) = static_cast<size_t>(GetPhysicalSize());
+          break;
+        default:
+          *((size_t*)value) = static_cast<size_t>(GetVirtualSize());
+          break;
+      }
       break;
     case HSA_REGION_INFO_ALLOC_MAX_SIZE:
       switch (mem_props_.HeapType) {
@@ -251,13 +273,12 @@ hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
       break;
     default:
       switch ((hsa_amd_region_info_t)attribute) {
-        case HSA_EXT_AMD_REGION_INFO_HOST_ACCESS:
+        case HSA_AMD_REGION_INFO_HOST_ACCESSIBLE:
           *((bool*)value) =
               (mem_props_.HeapType == HSA_HEAPTYPE_SYSTEM) ? true : false;
           break;
-        case HSA_EXT_AMD_REGION_INFO_BASE:
-          *((void**)value) =
-              reinterpret_cast<void*>(mem_props_.VirtualBaseAddress);
+        case HSA_AMD_REGION_INFO_BASE:
+          *((void**)value) = reinterpret_cast<void*>(GetBaseAddress());
           break;
         default:
           return HSA_STATUS_ERROR_INVALID_ARGUMENT;
@@ -270,7 +291,7 @@ hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
 
 hsa_status_t MemoryRegion::AssignAgent(void* ptr, size_t size,
                                        const core::Agent& agent,
-                                       hsa_access_permission_t access) {
+                                       hsa_access_permission_t access) const {
   if (fine_grain()) {
     return HSA_STATUS_SUCCESS;
   }
@@ -282,11 +303,14 @@ hsa_status_t MemoryRegion::AssignAgent(void* ptr, size_t size,
 
   if (IsLocalMemory()) {
     HSAuint64 u_ptr = reinterpret_cast<HSAuint64>(ptr);
-    if (u_ptr >= GetBaseAddress() && u_ptr < (GetBaseAddress() + GetSize())) {
+    if (u_ptr >= GetBaseAddress() &&
+        u_ptr < (GetBaseAddress() + GetVirtualSize())) {
       // TODO: only support agent allocation buffer.
-      if (!MakeKfdMemoryResident(ptr, size)) {
-        return HSA_STATUS_ERROR;
-      }
+
+      // TODO: commented until API to explicitly unpin memory is available.
+      // if (!MakeKfdMemoryResident(ptr, size)) {
+      //  return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+      //}
 
       return HSA_STATUS_SUCCESS;
     } else {

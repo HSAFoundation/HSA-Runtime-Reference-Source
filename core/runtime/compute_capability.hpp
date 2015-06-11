@@ -1,5 +1,5 @@
-#ifndef HSA_RUNTIME_CORE_LOADER_COMPUTE_CAPABILITY_HPP_
-#define HSA_RUNTIME_CORE_LOADER_COMPUTE_CAPABILITY_HPP_
+#ifndef HSA_RUNTIME_CORE_COMPUTE_CAPABILITY_HPP_
+#define HSA_RUNTIME_CORE_COMPUTE_CAPABILITY_HPP_
 
 #include <cstdint>
 #include <ostream>
@@ -9,7 +9,6 @@
 #define COMPUTE_CAPABILITY_VERSION_STEPPING_UNDEFINED -1
 
 namespace core {
-namespace loader {
 
 //===----------------------------------------------------------------------===//
 // ComputeProperties.                                                         //
@@ -102,7 +101,6 @@ private:
   ComputeProperties compute_properties_;
 }; // class ComputeCapability
 
-} // namespace loader
 } // namespace core
 
-#endif // HSA_RUNTIME_CORE_LOADER_COMPUTE_CAPABILITY_HPP_
+#endif // HSA_RUNTIME_CORE_COMPUTE_CAPABILITY_HPP_

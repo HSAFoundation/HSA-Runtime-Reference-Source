@@ -19,6 +19,8 @@ cmake_minimum_required(VERSION 2.8.0)
 ##          Run 'make'
 ##          for 64 bit, export HSA_BUILD_LIB_PATH=
 ##                                <install_dir>/libhsakmt/build/lnx64a
+##          for 32 bit, export HSA_BUILD_LIB_PATH=
+##                                <install_dir>/libhsakmt/build/lnx
 ##
 ## The system environment is now ready to build HSA. Please see the
 ## "Usage" instructions below.
@@ -31,9 +33,10 @@ cmake_minimum_required(VERSION 2.8.0)
 ## libhsa-runtime{64}.so will be in core/debug64 folder.
 ##
 ## Defaults to 64 bit Debug build.
-##    To build Release 64 bit:
+##    To build Release 32 bit:
 ##      export HSA_BUILD_TARGET_TYPE=release
-##    Create another build folder, lets say release64 under core
+##      export HSA_BUILD_TARGET_BITS=32
+##    Create another build folder, lets say release32 under core
 ##    and build it from there.
 ##
 ## Clean/Rebuild build:
@@ -114,6 +117,7 @@ set(CMAKE_SKIP_BUILD_RPATH TRUE)
 ## Source files.
 set (CORE_SRCS util/lnx/os_linux.cpp)
 set (CORE_SRCS ${CORE_SRCS} util/small_heap.cpp)
+set (CORE_SRCS ${CORE_SRCS} util/timer.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_blit_kernel.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_blit_sdma.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_cpu_agent.cpp)
@@ -123,6 +127,7 @@ set (CORE_SRCS ${CORE_SRCS} runtime/amd_memory_region.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_memory_registration.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_sdma_cmdwriter_kv.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/amd_topology.cpp)
+set (CORE_SRCS ${CORE_SRCS} runtime/compute_capability.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/default_signal.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/host_queue.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa.cpp)
@@ -130,16 +135,16 @@ set (CORE_SRCS ${CORE_SRCS} runtime/hsa_api_trace.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa_ext_amd.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/hsa_ext_interface.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/interrupt_signal.cpp)
+set (CORE_SRCS ${CORE_SRCS} runtime/isa.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/memory_database.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/runtime.cpp)
 set (CORE_SRCS ${CORE_SRCS} runtime/signal.cpp)
 set (CORE_SRCS ${CORE_SRCS} common/hsa_table_interface.cpp)
-set (CORE_SRCS ${CORE_SRCS} loader/compute_capability.cpp)
 set (CORE_SRCS ${CORE_SRCS} loader/executable.cpp)
-set (CORE_SRCS ${CORE_SRCS} loader/isa.cpp)
 
 ## Include path(s).
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
+include_directories(${CMAKE_SOURCE_DIR}/../inc)
 include_directories($ENV{HSA_BUILD_INC_PATH})
 
 ## Library path(s).

@@ -45,15 +45,17 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __linux__
-
-#include <string>
-
 #include "core/util/os.h"
+
+#include <link.h>
 #include <dlfcn.h>
-#include "unistd.h"
-#include "sched.h"
 #include <pthread.h>
+#include <sched.h>
+#include <string>
+#include <cstring>
+#include <sys/sysinfo.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 namespace os {
 
@@ -70,7 +72,24 @@ LibHandle LoadLib(std::string filename) {
 }
 
 void* GetExportAddress(LibHandle lib, std::string export_name) {
-  return dlsym(*(void**)&lib, export_name.c_str());
+  void* ret = dlsym(*(void**)&lib, export_name.c_str());
+
+  // dlsym searches the given library and all the library's load dependencies.
+  // Remaining code limits symbol lookup to only the library handle given.
+  // This lookup pattern matches Windows.
+  if (ret == NULL) return ret;
+
+  link_map* map;
+  int err = dlinfo(*(void**)&lib, RTLD_DI_LINKMAP, &map);
+  assert(err != -1 && "dlinfo failed.");
+
+  Dl_info info;
+  err = dladdr(ret, &info);
+  assert(err != 0 && "dladdr failed.");
+
+  if (strcmp(info.dli_fname, map->l_name) == 0) return ret;
+
+  return NULL;
 }
 
 void CloseLib(LibHandle lib) { dlclose(*(void**)&lib); }
@@ -170,6 +189,17 @@ size_t GetUserModeVirtualMemorySize() {
 #endif
 }
 
+size_t GetUsablePhysicalHostMemorySize() {
+  struct sysinfo info = {0};
+  if (sysinfo(&info) != 0) {
+    return 0;
+  }
+
+  const size_t physical_size =
+      static_cast<size_t>(info.totalram * info.mem_unit);
+  return std::min(GetUserModeVirtualMemorySize(), physical_size);
+}
+
 uintptr_t GetUserModeVirtualMemoryBase() { return (uintptr_t)0; }
 
 // Os event implementation
@@ -180,48 +210,45 @@ typedef struct EventDescriptor_ {
   bool auto_reset;
 } EventDescriptor;
 
-EventHandle CreateOsEvent(bool auto_reset, bool init_state) 
-{
-  EventDescriptor *eventDescrp;
-  eventDescrp = (EventDescriptor *)malloc(sizeof(EventDescriptor));
+EventHandle CreateOsEvent(bool auto_reset, bool init_state) {
+  EventDescriptor* eventDescrp;
+  eventDescrp = (EventDescriptor*)malloc(sizeof(EventDescriptor));
 
   pthread_mutex_init(&eventDescrp->mutex, NULL);
   pthread_cond_init(&eventDescrp->event, NULL);
   eventDescrp->auto_reset = auto_reset;
   eventDescrp->state = init_state;
-  
+
   EventHandle handle = reinterpret_cast<EventHandle>(eventDescrp);
 
   return handle;
 }
 
-int DestroyOsEvent(EventHandle event)
-{
+int DestroyOsEvent(EventHandle event) {
   if (event == NULL) {
     return -1;
   }
 
-  EventDescriptor *eventDescrp = reinterpret_cast<EventDescriptor *>(event);
-  int ret_code =  pthread_cond_destroy(&eventDescrp->event);
+  EventDescriptor* eventDescrp = reinterpret_cast<EventDescriptor*>(event);
+  int ret_code = pthread_cond_destroy(&eventDescrp->event);
   ret_code |= pthread_mutex_destroy(&eventDescrp->mutex);
   free(eventDescrp);
   return ret_code;
 }
 
-int WaitForOsEvent(EventHandle event, unsigned int milli_seconds)
-{
+int WaitForOsEvent(EventHandle event, unsigned int milli_seconds) {
   if (event == NULL) {
     return -1;
   }
 
-  EventDescriptor *eventDescrp = reinterpret_cast<EventDescriptor *>(event);
+  EventDescriptor* eventDescrp = reinterpret_cast<EventDescriptor*>(event);
   // Event wait time is 0 and state is non-signaled, return directly
   if (milli_seconds == 0) {
     int tmp_ret = pthread_mutex_trylock(&eventDescrp->mutex);
-      if (tmp_ret == EBUSY) {
-        // Timeout
-        return 1;
-      }
+    if (tmp_ret == EBUSY) {
+      // Timeout
+      return 1;
+    }
   }
 
   int ret_code = 0;
@@ -229,39 +256,38 @@ int WaitForOsEvent(EventHandle event, unsigned int milli_seconds)
   if (!eventDescrp->state) {
     if (milli_seconds == 0) {
       ret_code = 1;
-    }
-    else {
+    } else {
       struct timespec ts;
       struct timeval tp;
-        
+
       ret_code = gettimeofday(&tp, NULL);
       ts.tv_sec = tp.tv_sec;
       ts.tv_nsec = tp.tv_usec * 1000;
-        
+
       unsigned int sec = milli_seconds / 1000;
       unsigned int mSec = milli_seconds % 1000;
-        
+
       ts.tv_sec += sec;
       ts.tv_nsec += mSec * 1000000;
-        
+
       // More then one second, add 1 sec to the tv_sec elem
       if (ts.tv_nsec > 1000000000) {
         ts.tv_sec += 1;
         ts.tv_nsec = ts.tv_nsec - 1000000000;
       }
-        
-      ret_code = pthread_cond_timedwait(&eventDescrp->event, &eventDescrp->mutex, &ts);
+
+      ret_code =
+          pthread_cond_timedwait(&eventDescrp->event, &eventDescrp->mutex, &ts);
       // Time out
       if (ret_code == 110) {
-        ret_code = 0x14003; // 1 means time out in HSA
+        ret_code = 0x14003;  // 1 means time out in HSA
       }
 
       if (ret_code == 0 && eventDescrp->auto_reset) {
         eventDescrp->state = false;
       }
     }
-  }
-  else if (eventDescrp->auto_reset) {
+  } else if (eventDescrp->auto_reset) {
     eventDescrp->state = false;
   }
   pthread_mutex_unlock(&eventDescrp->mutex);
@@ -269,19 +295,18 @@ int WaitForOsEvent(EventHandle event, unsigned int milli_seconds)
   return ret_code;
 }
 
-int SetOsEvent(EventHandle event)
-{
+int SetOsEvent(EventHandle event) {
   if (event == NULL) {
     return -1;
   }
 
-  EventDescriptor *eventDescrp = reinterpret_cast<EventDescriptor *>(event);
+  EventDescriptor* eventDescrp = reinterpret_cast<EventDescriptor*>(event);
   int ret_code = 0;
   ret_code = pthread_mutex_lock(&eventDescrp->mutex);
   eventDescrp->state = true;
   ret_code = pthread_mutex_unlock(&eventDescrp->mutex);
   ret_code |= pthread_cond_signal(&eventDescrp->event);
-   
+
   return ret_code;
 }
 
@@ -290,7 +315,7 @@ int ResetOsEvent(EventHandle event) {
     return -1;
   }
 
-  EventDescriptor *eventDescrp = reinterpret_cast<EventDescriptor *>(event);
+  EventDescriptor* eventDescrp = reinterpret_cast<EventDescriptor*>(event);
   int ret_code = 0;
   ret_code = pthread_mutex_lock(&eventDescrp->mutex);
   eventDescrp->state = false;
@@ -299,6 +324,25 @@ int ResetOsEvent(EventHandle event) {
   return ret_code;
 }
 
+uint64_t ReadAccurateClock() {
+  timespec time;
+  int err = clock_gettime(CLOCK_MONOTONIC_RAW, &time);
+  assert(err == 0 && "clock_gettime(CLOCK_MONOTONIC_RAW,...) failed");
+  return uint64_t(time.tv_sec) * 1000000000ull + uint64_t(time.tv_nsec);
+}
+
+uint64_t AccurateClockFrequency() {
+  timespec time;
+  int err = clock_getres(CLOCK_MONOTONIC_RAW, &time);
+  assert(err == 0 && "clock_getres(CLOCK_MONOTONIC_RAW,...) failed");
+  assert(time.tv_sec == 0 &&
+         "clock_getres(CLOCK_MONOTONIC_RAW,...) returned very low frequency "
+         "(<1Hz).");
+  assert(time.tv_nsec < 0xFFFFFFFF &&
+         "clock_getres(CLOCK_MONOTONIC_RAW,...) returned very low frequency "
+         "(<1Hz).");
+  return uint64_t(time.tv_nsec) * 1000000000ull;
+}
 }
 
 #endif

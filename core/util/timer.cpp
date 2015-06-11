@@ -44,47 +44,66 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "core/inc/host_queue.h"
+#include "core/util/timer.h"
 
-#include "core/inc/runtime.h"
-#include "core/util/utils.h"
+namespace timer {
 
-namespace core {
-HostQueue::HostQueue(hsa_region_t region, uint32_t ring_size,
-                     hsa_queue_type_t type, uint32_t features,
-                     hsa_signal_t doorbell_signal)
-    : size_(ring_size), active_(false) {
-  HSA::hsa_memory_register(this, sizeof(HostQueue));
-
-  const size_t queue_buffer_size = size_ * sizeof(AqlPacket);
-  if (HSA_STATUS_SUCCESS !=
-      HSA::hsa_memory_allocate(region, queue_buffer_size, &ring_)) {
-    return;
-  }
-
-  assert(IsMultipleOf(ring_, kRingAlignment));
-  assert(ring_ != NULL);
-
-  amd_queue_.hsa_queue.base_address = ring_;
-  amd_queue_.hsa_queue.size = size_;
-  amd_queue_.hsa_queue.doorbell_signal = doorbell_signal;
-  amd_queue_.hsa_queue.id = Runtime::runtime_singleton_->GetQueueId();
-  amd_queue_.hsa_queue.type = type;
-  amd_queue_.hsa_queue.features = features;
-#ifdef HSA_LARGE_MODEL
-  amd_queue_.is_ptr64 = 1;
-#else
-  amd_queue_.is_ptr64 = 0;
-#endif
-  amd_queue_.write_dispatch_id = amd_queue_.read_dispatch_id = 0;
-  amd_queue_.enable_profiling = 0;
-
-  active_ = true;
+accurate_clock::init::init() {
+  freq = os::AccurateClockFrequency();
+  accurate_clock::period_ns = 1e9 / double(freq);
 }
 
-HostQueue::~HostQueue() {
-  HSA::hsa_memory_free(ring_);
-  HSA::hsa_memory_deregister(this, sizeof(HostQueue));
+// Calibrates the fast clock using the accurate clock.
+fast_clock::init::init() {
+  typedef accurate_clock clock;
+  clock::duration delay(std::chrono::milliseconds(1));
+
+  // calibrate clock
+  fast_clock::raw_rep min = 0;
+  clock::duration elapsed = clock::duration::max();
+
+  do {
+    for (int t = 0; t < 10; t++) {
+      fast_clock::raw_rep r1, r2;
+      clock::time_point t0, t1, t2, t3;
+
+      t0 = clock::now();
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      r1 = fast_clock::raw_now();
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      t1 = clock::now();
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+
+      do {
+        t2 = clock::now();
+      } while (t2 - t1 < delay);
+
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      r2 = fast_clock::raw_now();
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      t3 = clock::now();
+
+      // If elapsed time is shorter than last recorded time and both the start
+      // and end times are confirmed correlated then record the clock readings.
+      // This protects against inaccuracy due to thread switching
+      if ((t3 - t1 < elapsed) && ((t1 - t0) * 10 < (t2 - t1)) &&
+          ((t3 - t2) * 10 < (t2 - t1))) {
+        elapsed = t3 - t1;
+        min = r2 - r1;
+      }
+    }
+    delay += delay;
+  } while (min < 1000);
+
+  fast_clock::freq = double(min) / duration_in_seconds(elapsed);
+  fast_clock::period_ps = 1e12 / fast_clock::freq;
 }
 
-}  // namespace core
+double accurate_clock::period_ns;
+accurate_clock::raw_frequency accurate_clock::freq;
+accurate_clock::init accurate_clock::accurate_clock_init;
+
+double fast_clock::period_ps;
+fast_clock::raw_frequency fast_clock::freq;
+fast_clock::init fast_clock::fast_clock_init;
+}

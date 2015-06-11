@@ -45,6 +45,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "core/inc/default_signal.h"
+#include "core/util/timer.h"
 
 namespace core {
 
@@ -89,42 +90,46 @@ hsa_signal_value_t DefaultSignal::WaitRelaxed(hsa_signal_condition_t condition,
   bool condition_met = false;
   int64_t value;
 
-  uint64_t start_time, sys_time;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
+  timer::fast_clock::time_point start_time, time;
+  start_time = timer::fast_clock::now();
+
+  uint64_t hsa_freq;
+  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &hsa_freq);
+  const timer::fast_clock::duration fast_timeout =
+      timer::duration_from_seconds<timer::fast_clock::duration>(
+          double(timeout) / double(hsa_freq));
 
   while (true) {
-    HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
-    if (sys_time - start_time > timeout) {
+    if (invalid_) return 0;
+
+    value = atomic::Load(&signal_.value, std::memory_order_relaxed);
+
+    switch (condition) {
+      case HSA_SIGNAL_CONDITION_EQ: {
+        condition_met = (value == compare_value);
+        break;
+      }
+      case HSA_SIGNAL_CONDITION_NE: {
+        condition_met = (value != compare_value);
+        break;
+      }
+      case HSA_SIGNAL_CONDITION_GTE: {
+        condition_met = (value >= compare_value);
+        break;
+      }
+      case HSA_SIGNAL_CONDITION_LT: {
+        condition_met = (value < compare_value);
+        break;
+      }
+      default:
+        return 0;
+    }
+    if (condition_met) return hsa_signal_value_t(value);
+
+    time = timer::fast_clock::now();
+    if (time - start_time > fast_timeout) {
       value = atomic::Load(&signal_.value, std::memory_order_relaxed);
       return hsa_signal_value_t(value);
-    }
-
-    for (int i = 0; i < 10000; i++) {
-      if (invalid_) return 0;
-
-      value = atomic::Load(&signal_.value, std::memory_order_relaxed);
-
-      switch (condition) {
-        case HSA_SIGNAL_CONDITION_EQ: {
-          condition_met = (value == compare_value);
-          break;
-        }
-        case HSA_SIGNAL_CONDITION_NE: {
-          condition_met = (value != compare_value);
-          break;
-        }
-        case HSA_SIGNAL_CONDITION_GTE: {
-          condition_met = (value >= compare_value);
-          break;
-        }
-        case HSA_SIGNAL_CONDITION_LT: {
-          condition_met = (value < compare_value);
-          break;
-        }
-        default:
-          return 0;
-      }
-      if (condition_met) return hsa_signal_value_t(value);
     }
   }
 }

@@ -1,10 +1,8 @@
-#include "isa.hpp"
+#include "core/runtime/isa.hpp"
 
 #include <cstdint>
 #include <ostream>
 #include <string>
-#include "compute_capability.hpp"
-#include "core/inc/hsa_internal.h"
 
 #include <cassert>
 #include <cstring>
@@ -12,7 +10,10 @@
 #include <new>
 #include <sstream>
 #include <stdexcept>
-#include "inc/hsa_ext_amd.h"
+
+#include "core/runtime/compute_capability.hpp"
+#include "core/inc/hsa_internal.h"
+#include "hsa_ext_amd.h"
 
 namespace {
 
@@ -20,7 +21,7 @@ namespace {
 // Isa List.                                                                  //
 //===----------------------------------------------------------------------===//
 
-std::list<core::loader::Isa> isa_list;
+std::list<core::Isa> isa_list;
 
 //===----------------------------------------------------------------------===//
 // Utilities.                                                                 //
@@ -52,7 +53,6 @@ bool Tokenize(
 } // namespace anonymous
 
 namespace core {
-namespace loader {
 
 //===----------------------------------------------------------------------===//
 // Isa.                                                                       //
@@ -119,7 +119,7 @@ hsa_status_t Isa::Initialize(const hsa_agent_t &in_agent) {
   uint32_t agent_device_id = 0;
   hsa_status_t hsa_status_code = HSA::hsa_agent_get_info(
     in_agent,
-    static_cast<hsa_agent_info_t>(HSA_EXT_AMD_AGENT_INFO_DEVICE_ID),
+    static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_CHIP_ID),
     &agent_device_id
   );
   if (HSA_STATUS_SUCCESS != hsa_status_code) {
@@ -196,6 +196,11 @@ hsa_status_t Isa::GetInfo(
 ) const {
   assert(out_value);
 
+  // TODO: only one call convention supported at the time.
+  if (in_call_convention_index != 0) {
+    return HSA_STATUS_ERROR_INVALID_INDEX;
+  }
+
   switch (in_isa_attribute) {
     case HSA_ISA_INFO_NAME_LENGTH: {
       *((uint32_t*)out_value) = static_cast<uint32_t>(full_name_.size());
@@ -206,19 +211,19 @@ hsa_status_t Isa::GetInfo(
       return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_CALL_CONVENTION_COUNT: {
-      // TODO: not implemented.
-      assert(false && "not implemented");
-      return HSA_STATUS_ERROR;
+      // TODO: hardcode for now.
+      *((uint32_t*)out_value) = 1;
+      return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONT_SIZE: {
-      // TODO: not implemented.
-      assert(false && "not implemented");
-      return HSA_STATUS_ERROR;
+      // TODO: hardcode for now.
+      *((uint32_t*)out_value) = 64;
+      return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONTS_PER_COMPUTE_UNIT: {
-      // TODO: not implemented.
-      assert(false && "not implemented");
-      return HSA_STATUS_ERROR;
+      // TODO: hardcode for now.
+      *((uint32_t*)out_value) = 40;
+      return HSA_STATUS_SUCCESS;
     }
     default: {
       return HSA_STATUS_ERROR_INVALID_ARGUMENT;
@@ -253,5 +258,4 @@ std::ostream& operator<<(
     in_isa.compute_capability_;
 } // ostream<<Isa
 
-} // namespace loader
 } // namespace core

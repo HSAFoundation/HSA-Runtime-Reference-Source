@@ -159,7 +159,6 @@ class HostQueue : public Queue {
   const uint32_t size_;
   bool active_;
   void* ring_;
-  hsa_signal_t doorbell_signal_;
 
   DISALLOW_COPY_AND_ASSIGN(HostQueue);
 };

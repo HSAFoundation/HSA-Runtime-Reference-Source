@@ -48,6 +48,7 @@
 #define HSA_RUNTME_CORE_SIGNAL_CPP_
 
 #include "core/inc/signal.h"
+#include "core/util/timer.h"
 #include <algorithm>
 
 namespace core {
@@ -102,16 +103,19 @@ uint32_t Signal::WaitAny(uint32_t signal_count, hsa_signal_t* hsa_signals,
 
   int64_t value;
 
-  uint64_t fast_start_time = __rdtsc();
-  //~200us at 4GHz - does not need to be an exact time, just a short while
-  const uint64_t kMaxElapsed = 800000;
+  timer::fast_clock::time_point start_time = timer::fast_clock::now();
 
+  // Set a polling timeout value
+  // Exact time is not hugely important, it should just be a short while which
+  // is smaller than the thread scheduling quantum (usually around 16ms)
+  const timer::fast_clock::duration kMaxElapsed = std::chrono::milliseconds(5);
+
+  // Convert timeout value into the fast_clock domain
   uint64_t hsa_freq;
   HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &hsa_freq);
-  const float invFreq = 1000.0f / hsa_freq;  // clock period in ms
-
-  uint64_t start_time, sys_time;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
+  const timer::fast_clock::duration fast_timeout =
+      timer::duration_from_seconds<timer::fast_clock::duration>(
+          double(timeout) / double(hsa_freq));
 
   bool condition_met = false;
   while (true) {
@@ -147,18 +151,20 @@ uint32_t Signal::WaitAny(uint32_t signal_count, hsa_signal_t* hsa_signals,
       }
     }
 
-    uint64_t time = __rdtsc();
-    if (time - fast_start_time > kMaxElapsed) {
-      HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
-      if (sys_time - start_time > timeout) {
+    timer::fast_clock::time_point time = timer::fast_clock::now();
+    if (time - start_time > kMaxElapsed) {
+      if (time - start_time > fast_timeout) {
         return uint32_t(-1);
       }
       if (wait_hint != HSA_WAIT_STATE_ACTIVE) {
         uint32_t wait_ms;
-        if (timeout == -1)
+        auto time_remaining = fast_timeout - (time - start_time);
+        if ((timeout == -1) ||
+            (time_remaining > std::chrono::milliseconds(uint32_t(-1))))
           wait_ms = uint32_t(-1);
         else
-          wait_ms = uint32_t((timeout - (sys_time - start_time)) * invFreq);
+          wait_ms = timer::duration_cast<std::chrono::milliseconds>(
+                        time_remaining).count();
         hsaKmtWaitOnMultipleEvents(evts, unique_evts, false, wait_ms);
       }
     }

@@ -58,7 +58,7 @@
 #include "core/inc/default_signal.h"
 #include "core/inc/interrupt_signal.h"
 #include "core/loader/executable.hpp"
-#include "core/loader/isa.hpp"
+#include "core/runtime/isa.hpp"
 
 template <class T>
 struct ValidityError;
@@ -79,7 +79,7 @@ struct ValidityError<core::Queue*> {
   enum { kValue = HSA_STATUS_ERROR_INVALID_QUEUE };
 };
 template <>
-struct ValidityError<core::loader::Isa*> {
+struct ValidityError<core::Isa*> {
   enum { kValue = HSA_STATUS_ERROR_INVALID_ISA };
 };
 template <class T>
@@ -90,6 +90,13 @@ struct ValidityError<const T*> {
 #define IS_BAD_PTR(ptr)                                          \
   do {                                                           \
     if ((ptr) == NULL) return HSA_STATUS_ERROR_INVALID_ARGUMENT; \
+  } while (false)
+#define IS_BAD_PROFILE(profile)                                  \
+  do {                                                           \
+    if (profile != HSA_PROFILE_BASE &&                           \
+        profile != HSA_PROFILE_FULL) {                           \
+      return HSA_STATUS_ERROR_INVALID_ARGUMENT;                  \
+    }                                                            \
   } while (false)
 #define IS_VALID(ptr)                                            \
   do {                                                           \
@@ -142,6 +149,7 @@ hsa_status_t HSA_API hsa_init() {
 }
 
 hsa_status_t HSA_API hsa_shut_down() {
+  IS_OPEN();
   if (core::Runtime::runtime_singleton_->Release()) return HSA_STATUS_SUCCESS;
   return HSA_STATUS_ERROR_NOT_INITIALIZED;
 }
@@ -152,6 +160,7 @@ hsa_status_t HSA_API hsa_shut_down() {
 hsa_status_t HSA_API
     hsa_system_get_info(hsa_system_info_t attribute, void* value) {
   IS_OPEN();
+  IS_BAD_PTR(value);
   return core::Runtime::runtime_singleton_->GetSystemInfo(attribute, value);
 }
 
@@ -210,39 +219,29 @@ hsa_status_t HSA_API
       // Currently there is only version 1.00.
       hsa_ext_images_1_00_pfn_t* ext_table =
           reinterpret_cast<hsa_ext_images_1_00_pfn_t*>(table);
-      ext_table->hsa_ext_image_clear = runtime_ext_table.hsa_ext_image_clear;
-      ext_table->hsa_ext_image_copy = runtime_ext_table.hsa_ext_image_copy;
-      ext_table->hsa_ext_image_create = runtime_ext_table.hsa_ext_image_create;
-      ext_table->hsa_ext_image_data_get_info =
-          runtime_ext_table.hsa_ext_image_data_get_info;
-      ext_table->hsa_ext_image_destroy =
-          runtime_ext_table.hsa_ext_image_destroy;
-      ext_table->hsa_ext_image_export = runtime_ext_table.hsa_ext_image_export;
-      ext_table->hsa_ext_image_get_capability =
-          runtime_ext_table.hsa_ext_image_get_capability;
-      ext_table->hsa_ext_image_import = runtime_ext_table.hsa_ext_image_import;
-      ext_table->hsa_ext_sampler_create =
-          runtime_ext_table.hsa_ext_sampler_create;
-      ext_table->hsa_ext_sampler_destroy =
-          runtime_ext_table.hsa_ext_sampler_destroy;
+      ext_table->hsa_ext_image_clear = hsa_ext_image_clear;
+      ext_table->hsa_ext_image_copy = hsa_ext_image_copy;
+      ext_table->hsa_ext_image_create = hsa_ext_image_create;
+      ext_table->hsa_ext_image_data_get_info = hsa_ext_image_data_get_info;
+      ext_table->hsa_ext_image_destroy = hsa_ext_image_destroy;
+      ext_table->hsa_ext_image_export = hsa_ext_image_export;
+      ext_table->hsa_ext_image_get_capability = hsa_ext_image_get_capability;
+      ext_table->hsa_ext_image_import = hsa_ext_image_import;
+      ext_table->hsa_ext_sampler_create = hsa_ext_sampler_create;
+      ext_table->hsa_ext_sampler_destroy = hsa_ext_sampler_destroy;
 
       return HSA_STATUS_SUCCESS;
     } else if (extension == HSA_EXTENSION_FINALIZER) {
       // Currently there is only version 1.00.
       hsa_ext_finalizer_1_00_pfn_s* ext_table =
           reinterpret_cast<hsa_ext_finalizer_1_00_pfn_s*>(table);
-      ext_table->hsa_ext_program_add_module =
-          runtime_ext_table.hsa_ext_program_add_module;
-      ext_table->hsa_ext_program_create =
-          runtime_ext_table.hsa_ext_program_create;
-      ext_table->hsa_ext_program_destroy =
-          runtime_ext_table.hsa_ext_program_destroy;
-      ext_table->hsa_ext_program_finalize =
-          runtime_ext_table.hsa_ext_program_finalize;
-      ext_table->hsa_ext_program_get_info =
-          runtime_ext_table.hsa_ext_program_get_info;
+      ext_table->hsa_ext_program_add_module = hsa_ext_program_add_module;
+      ext_table->hsa_ext_program_create = hsa_ext_program_create;
+      ext_table->hsa_ext_program_destroy = hsa_ext_program_destroy;
+      ext_table->hsa_ext_program_finalize = hsa_ext_program_finalize;
+      ext_table->hsa_ext_program_get_info = hsa_ext_program_get_info;
       ext_table->hsa_ext_program_iterate_modules =
-          runtime_ext_table.hsa_ext_program_iterate_modules;
+          hsa_ext_program_iterate_modules;
 
       return HSA_STATUS_SUCCESS;
     } else {
@@ -275,11 +274,18 @@ hsa_status_t HSA_API hsa_agent_get_info(hsa_agent_t agent_handle,
   return agent->GetInfo(attribute, value);
 }
 
-hsa_status_t HSA_API hsa_agent_get_exception_policies(hsa_agent_t agent,
+hsa_status_t HSA_API hsa_agent_get_exception_policies(hsa_agent_t agent_handle,
                                                       hsa_profile_t profile,
                                                       uint16_t* mask) {
-  // TODO: not implemented yet.
-  return HSA_STATUS_ERROR;
+  IS_OPEN();
+  IS_BAD_PTR(mask);
+  IS_BAD_PROFILE(profile);
+  const core::Agent* agent = core::Agent::Convert(agent_handle);
+  IS_VALID(agent);
+
+  // TODO: Fix me when exception policies are supported.
+  *mask = 0;
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API
@@ -681,7 +687,7 @@ hsa_status_t HSA_API hsa_region_get_info(hsa_region_t region,
 
 hsa_status_t HSA_API hsa_memory_register(void* address, size_t size) {
   IS_OPEN();
-  
+
   if (size == 0 && address != NULL) {
     return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
@@ -697,7 +703,7 @@ hsa_status_t HSA_API hsa_memory_deregister(void* address, size_t size) {
   IS_OPEN();
 
 #ifndef __linux__
-  if(core::Runtime::runtime_singleton_->Deregister(address))
+  if (core::Runtime::runtime_singleton_->Deregister(address))
     return HSA_STATUS_SUCCESS;
   return HSA_STATUS_ERROR_INVALID_ARGUMENT;
 #endif
@@ -707,7 +713,10 @@ hsa_status_t HSA_API hsa_memory_deregister(void* address, size_t size) {
 hsa_status_t HSA_API
     hsa_memory_allocate(hsa_region_t region, size_t size, void** ptr) {
   IS_OPEN();
-  IS_BAD_PTR(ptr);
+
+  if (size == 0 || ptr == NULL) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
 
   const core::MemoryRegion* mem_region = core::MemoryRegion::Convert(region);
   IS_VALID(mem_region);
@@ -1065,7 +1074,7 @@ hsa_signal_value_t HSA_API hsa_signal_cas_acq_rel(hsa_signal_t hsa_signal,
 }
 
 //-----------------------------------------------------------------------------
-// Code Object
+// Isa
 //-----------------------------------------------------------------------------
 
 hsa_status_t HSA_API hsa_isa_from_name(const char* name, hsa_isa_t* isa) {
@@ -1073,7 +1082,7 @@ hsa_status_t HSA_API hsa_isa_from_name(const char* name, hsa_isa_t* isa) {
   IS_BAD_PTR(name);
   IS_BAD_PTR(isa);
 
-  return core::loader::Isa::Create(name, isa);
+  return core::Isa::Create(name, isa);
 }
 
 hsa_status_t HSA_API hsa_isa_get_info(hsa_isa_t isa, hsa_isa_info_t attribute,
@@ -1081,7 +1090,7 @@ hsa_status_t HSA_API hsa_isa_get_info(hsa_isa_t isa, hsa_isa_info_t attribute,
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  core::loader::Isa* isa_object = core::loader::Isa::Object(isa);
+  core::Isa* isa_object = core::Isa::Object(isa);
   IS_VALID(isa_object);
 
   return isa_object->GetInfo(attribute, index, value);
@@ -1092,15 +1101,18 @@ hsa_status_t HSA_API hsa_isa_compatible(hsa_isa_t code_object_isa,
   IS_OPEN();
   IS_BAD_PTR(result);
 
-  core::loader::Isa* code_object_isa_object =
-      core::loader::Isa::Object(code_object_isa);
+  core::Isa* code_object_isa_object = core::Isa::Object(code_object_isa);
   IS_VALID(code_object_isa_object);
 
-  core::loader::Isa* agent_isa_object = core::loader::Isa::Object(agent_isa);
+  core::Isa* agent_isa_object = core::Isa::Object(agent_isa);
   IS_VALID(agent_isa_object);
 
   return code_object_isa_object->IsCompatible(*agent_isa_object, result);
 }
+
+//-----------------------------------------------------------------------------
+// Code object.
+//-----------------------------------------------------------------------------
 
 hsa_status_t HSA_API hsa_code_object_serialize(
     hsa_code_object_t code_object,
@@ -1113,9 +1125,33 @@ hsa_status_t HSA_API hsa_code_object_serialize(
   IS_BAD_PTR(serialized_code_object);
   IS_BAD_PTR(serialized_code_object_size);
 
-  return core::loader::SerializeCodeObject(
-      code_object, alloc_callback, callback_data, options,
-      serialized_code_object, serialized_code_object_size);
+  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
+  if (!elfmemrd) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  uint64_t elfmemsz = core::loader::ElfMemoryImage::Size(elfmemrd);
+  if (!elfmemsz) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  hsa_status_t hsc = alloc_callback(elfmemsz,
+                                    callback_data,
+                                    serialized_code_object);
+  if (HSA_STATUS_SUCCESS != hsc) {
+    return hsc;
+  }
+
+  memcpy(*serialized_code_object, elfmemrd, elfmemsz);
+  *serialized_code_object_size = elfmemsz;
+
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API
@@ -1127,14 +1163,46 @@ hsa_status_t HSA_API
   IS_BAD_PTR(serialized_code_object);
   IS_BAD_PTR(code_object);
 
-  return core::loader::DeserializeCodeObject(serialized_code_object,
-                                             serialized_code_object_size,
-                                             options, code_object);
+  if (!serialized_code_object_size) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+
+  if (!core::loader::ElfMemoryImage::Is64(serialized_code_object)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::IsAmdGpu(serialized_code_object)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  void *elfmemrd = malloc(serialized_code_object_size);
+  if (!elfmemrd) {
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  }
+
+  memcpy(elfmemrd, serialized_code_object, serialized_code_object_size);
+  code_object->handle = reinterpret_cast<uint64_t>(elfmemrd);
+
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API hsa_code_object_destroy(hsa_code_object_t code_object) {
   IS_OPEN();
-  return core::loader::DestroyCodeObject(code_object);
+
+  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
+  if (!elfmemrd) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  core::loader::AmdGpuImage::DestroySymbols(elfmemrd);
+  free(elfmemrd);
+
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API hsa_code_object_get_info(hsa_code_object_t code_object,
@@ -1143,17 +1211,41 @@ hsa_status_t HSA_API hsa_code_object_get_info(hsa_code_object_t code_object,
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  return core::loader::GetCodeObjectInfo(code_object, attribute, value);
+  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
+  if (!elfmemrd) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  return core::loader::AmdGpuImage::GetInfo(elfmemrd, attribute, value);
 }
 
 hsa_status_t HSA_API hsa_code_object_get_symbol(hsa_code_object_t code_object,
-                                                const char* symbol_name,
-                                                hsa_code_symbol_t* symbol) {
+                                                const char *symbol_name,
+                                                hsa_code_symbol_t *symbol) {
   IS_OPEN();
   IS_BAD_PTR(symbol_name);
   IS_BAD_PTR(symbol);
 
-  return core::loader::GetCodeObjectSymbol(code_object, symbol_name, symbol);
+  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
+  if (!elfmemrd) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  // TODO(kzhuravl): module_name is NULL until spec is changed, waiting for
+  // Mario.
+  return core::loader::AmdGpuImage::GetSymbol(elfmemrd, NULL, symbol_name, symbol);
 }
 
 hsa_status_t HSA_API hsa_code_symbol_get_info(hsa_code_symbol_t code_symbol,
@@ -1162,7 +1254,17 @@ hsa_status_t HSA_API hsa_code_symbol_get_info(hsa_code_symbol_t code_symbol,
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  return core::loader::GetCodeObjectSymbolInfo(code_symbol, attribute, value);
+  core::loader::Symbol *sym = core::loader::Symbol::CConvert(code_symbol);
+  if (sym->IsKernel()) {
+    return ((core::loader::KernelSymbol*)sym)->GetInfo(
+      core::loader::symbol_attribute32_t(attribute), value);
+  } else if (sym->IsVariable()) {
+    return ((core::loader::VariableSymbol*)sym)->GetInfo(
+      core::loader::symbol_attribute32_t(attribute), value);
+  }
+
+  assert(false);
+  return HSA_STATUS_ERROR;
 }
 
 hsa_status_t HSA_API hsa_code_object_iterate_symbols(
@@ -1171,8 +1273,9 @@ hsa_status_t HSA_API hsa_code_object_iterate_symbols(
                              hsa_code_symbol_t symbol, void* data),
     void* data) {
   IS_OPEN();
-  // TODO.
-  return HSA_STATUS_ERROR;
+  IS_BAD_PTR(callback);
+
+  return core::loader::AmdGpuImage::IterateSymbols(code_object, callback, data);
 }
 
 //-----------------------------------------------------------------------------
@@ -1184,13 +1287,37 @@ hsa_status_t HSA_API
                           hsa_executable_state_t executable_state,
                           const char* options, hsa_executable_t* executable) {
   IS_OPEN();
-  return core::loader::Executable::Create(profile, executable_state, options,
-                                          executable);
+  IS_BAD_PTR(executable);
+
+  if (HSA_PROFILE_BASE != profile && HSA_PROFILE_FULL != profile) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+  if (HSA_EXECUTABLE_STATE_FROZEN != executable_state &&
+      HSA_EXECUTABLE_STATE_UNFROZEN != executable_state) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  }
+
+  core::loader::Executable *exec = new core::loader::Executable(
+    profile,
+    executable_state);
+  if (!exec) {
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  }
+
+  *executable = core::loader::Executable::Convert(exec);
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API hsa_executable_destroy(hsa_executable_t executable) {
   IS_OPEN();
-  return core::loader::Executable::Destroy(executable);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  if (!exec) {
+    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
+  }
+
+  delete exec;
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API
@@ -1199,39 +1326,53 @@ hsa_status_t HSA_API
                                     hsa_code_object_t code_object,
                                     const char* options) {
   IS_OPEN();
-  core::loader::Executable* exec =
-      reinterpret_cast<core::loader::Executable*>(executable.handle);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
+
   return exec->LoadCodeObject(agent, code_object, options);
 }
 
 hsa_status_t HSA_API
     hsa_executable_freeze(hsa_executable_t executable, const char* options) {
   IS_OPEN();
-  core::loader::Executable* exec =
-      reinterpret_cast<core::loader::Executable*>(executable.handle);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
-  return exec->Freeze(options);
+
+  return exec->Freeze();
 }
 
 hsa_status_t HSA_API hsa_executable_get_info(hsa_executable_t executable,
                                              hsa_executable_info_t attribute,
                                              void* value) {
   IS_OPEN();
+  IS_BAD_PTR(value);
 
-  if (!value) {
-    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
-  }
-  core::loader::Executable* exec =
-      reinterpret_cast<core::loader::Executable*>(executable.handle);
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
-  return exec->GetInfo(attribute, value);
+
+  switch (attribute) {
+    case HSA_EXECUTABLE_INFO_PROFILE: {
+      *((hsa_profile_t*)value) = exec->profile();
+      break;
+    }
+    case HSA_EXECUTABLE_INFO_STATE: {
+      *((hsa_executable_state_t*)value) = exec->state();
+      break;
+    }
+    default: {
+      return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+    }
+  }
+
+  return HSA_STATUS_SUCCESS;
 }
 
 hsa_status_t HSA_API
@@ -1239,8 +1380,15 @@ hsa_status_t HSA_API
                                           const char* variable_name,
                                           void* address) {
   IS_OPEN();
-  // TODO
-  return HSA_STATUS_ERROR;
+  IS_BAD_PTR(variable_name);
+  IS_BAD_PTR(address);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  if (!exec) {
+    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
+  }
+
+  return exec->DefineProgramVariable(variable_name, address);
 }
 
 hsa_status_t HSA_API
@@ -1249,8 +1397,16 @@ hsa_status_t HSA_API
                                                 const char* variable_name,
                                                 void* address) {
   IS_OPEN();
-  // TODO
-  return HSA_STATUS_ERROR;
+  IS_BAD_PTR(variable_name);
+  IS_BAD_PTR(address);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  if (!exec) {
+    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
+  }
+
+  return exec->DefineAgentVariable(
+    variable_name, agent, HSA_VARIABLE_SEGMENT_GLOBAL, address);
 }
 
 hsa_status_t HSA_API
@@ -1259,15 +1415,29 @@ hsa_status_t HSA_API
                                             const char* variable_name,
                                             void* address) {
   IS_OPEN();
-  // TODO
-  return HSA_STATUS_ERROR;
+  IS_BAD_PTR(variable_name);
+  IS_BAD_PTR(address);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  if (!exec) {
+    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
+  }
+
+  return exec->DefineAgentVariable(
+    variable_name, agent, HSA_VARIABLE_SEGMENT_READONLY, address);
 }
 
 hsa_status_t HSA_API
     hsa_executable_validate(hsa_executable_t executable, uint32_t* result) {
   IS_OPEN();
-  // TODO
-  return HSA_STATUS_ERROR;
+  IS_BAD_PTR(result);
+
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  if (!exec) {
+    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
+  }
+
+  return exec->Validate(result);
 }
 
 hsa_status_t HSA_API
@@ -1276,17 +1446,15 @@ hsa_status_t HSA_API
                               hsa_agent_t agent, int32_t call_convention,
                               hsa_executable_symbol_t* symbol) {
   IS_OPEN();
+  IS_BAD_PTR(symbol_name);
+  IS_BAD_PTR(symbol);
 
-  if (!symbol_name || !symbol) {
-    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
-  }
-  core::loader::Executable* exec =
-      reinterpret_cast<core::loader::Executable*>(executable.handle);
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
-  return exec->GetSymbol(module_name, symbol_name, agent, call_convention,
-                         symbol);
+
+  return exec->GetSymbol(module_name, symbol_name, agent, call_convention, symbol);
 }
 
 hsa_status_t HSA_API
@@ -1294,11 +1462,19 @@ hsa_status_t HSA_API
                                    hsa_executable_symbol_info_t attribute,
                                    void* value) {
   IS_OPEN();
+  IS_BAD_PTR(value);
 
-  if (!value) {
-    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
+  core::loader::Symbol *sym = core::loader::Symbol::EConvert(executable_symbol);
+  if (sym->IsKernel()) {
+    return ((core::loader::KernelSymbol*)sym)->GetInfo(
+      core::loader::symbol_attribute32_t(attribute), value);
+  } else if (sym->IsVariable()) {
+    return ((core::loader::VariableSymbol*)sym)->GetInfo(
+      core::loader::symbol_attribute32_t(attribute), value);
   }
-  return core::loader::GetSymbolInfo(executable_symbol, attribute, value);
+
+  assert(false);
+  return HSA_STATUS_ERROR;
 }
 
 hsa_status_t HSA_API hsa_executable_iterate_symbols(
@@ -1307,15 +1483,13 @@ hsa_status_t HSA_API hsa_executable_iterate_symbols(
                              hsa_executable_symbol_t symbol, void* data),
     void* data) {
   IS_OPEN();
+  IS_BAD_PTR(callback);
 
-  if (!callback) {
-    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
-  }
-  core::loader::Executable* exec =
-      reinterpret_cast<core::loader::Executable*>(executable.handle);
+  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
+
   return exec->IterateSymbols(callback, data);
 }
 
@@ -1440,6 +1614,34 @@ hsa_status_t HSA_API
       *status_string =
           "HSA_EXT_STATUS_ERROR_IMAGE_SIZE_UNSUPPORTED: Image size "
           "is not supported.\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_INVALID_PROGRAM:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_INVALID_PROGRAM: Invalid program\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_INVALID_MODULE:
+      *status_string = "HSA_EXT_STATUS_ERROR_INVALID_MODULE: Invalid module\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_INCOMPATIBLE_MODULE:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_INCOMPATIBLE_MODULE: Incompatible module\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_MODULE_ALREADY_INCLUDED:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_MODULE_ALREADY_INCLUDED: Module already "
+          "included\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_SYMBOL_MISMATCH:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_SYMBOL_MISMATCH: Symbol mismatch\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_FINALIZATION_FAILED:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_FINALIZATION_FAILED: Finalization failed\n";
+      break;
+    case HSA_EXT_STATUS_ERROR_DIRECTIVE_MISMATCH:
+      *status_string =
+          "HSA_EXT_STATUS_ERROR_DIRECTIVE_MISMATCH: Directive mismatch\n";
       break;
     default:
       return HSA_STATUS_ERROR_INVALID_ARGUMENT;

@@ -67,7 +67,7 @@ struct AqlPacket {
   bool IsValid() {
     const uint8_t packet_type = dispatch.header >> HSA_PACKET_HEADER_TYPE;
     return (packet_type > HSA_PACKET_TYPE_INVALID &&
-            packet_type < HSA_PACKET_TYPE_COUNT);
+            packet_type <= HSA_PACKET_TYPE_BARRIER_OR);
   }
 };
 

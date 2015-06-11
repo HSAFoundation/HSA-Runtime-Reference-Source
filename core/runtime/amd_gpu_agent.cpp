@@ -54,7 +54,7 @@
 #include "core/inc/runtime.h"
 #include "core/inc/amd_memory_region.h"
 #include "core/inc/amd_hw_aql_command_processor.h"
-#include "core/loader/isa.hpp"
+#include "core/runtime/isa.hpp"
 
 #include "inc/hsa_ext_image.h"
 
@@ -101,7 +101,7 @@ GpuAgent::GpuAgent(HSAuint32 node, const HsaNodeProperties& node_props,
       cache_props_(cache_props),
       ape1_base_(0),
       ape1_size_(0),
-      current_memory_type_(HSA_EXT_AMD_MEMORY_TYPE_COHERENT),
+      current_coherency_type_(HSA_AMD_COHERENCY_TYPE_COHERENT),
       blit_(NULL) {
   HSAKMT_STATUS err = hsaKmtGetClockCounters(node_id_, &t0_);
   t1_ = t0_;
@@ -193,10 +193,17 @@ hsa_status_t GpuAgent::IterateRegion(
   const size_t num_mems = regions().size();
 
   for (size_t j = 0; j < num_mems; ++j) {
-    hsa_region_t region = core::MemoryRegion::Convert(regions()[j]);
-    hsa_status_t status = callback(region, data);
-    if (status != HSA_STATUS_SUCCESS) {
-      return status;
+    const MemoryRegion* amd_region =
+        reinterpret_cast<const MemoryRegion*>(regions()[j]);
+
+    // Skip memory regions other than host, gpu local, or LDS.
+    if (amd_region->IsSystem() || amd_region->IsLocalMemory() ||
+        amd_region->IsLDS()) {
+      hsa_region_t hsa_region = core::MemoryRegion::Convert(amd_region);
+      hsa_status_t status = callback(hsa_region, data);
+      if (status != HSA_STATUS_SUCCESS) {
+        return status;
+      }
     }
   }
 
@@ -262,13 +269,13 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       *((uint32_t*)value) = properties_.WaveFrontSize;
       break;
     case HSA_AGENT_INFO_WORKGROUP_MAX_DIM: {
-	  //TODO: must be per-device
-      const uint16_t group_size[3] = {256, 256, 256};
+      // TODO: must be per-device
+      const uint16_t group_size[3] = {2048, 2048, 2048};
       std::memcpy(value, group_size, sizeof(group_size));
     } break;
     case HSA_AGENT_INFO_WORKGROUP_MAX_SIZE:
-	  //TODO: must be per-device
-      *((uint32_t*)value) = 256;
+      // TODO: must be per-device
+      *((uint32_t*)value) = 2048;
       break;
     case HSA_AGENT_INFO_GRID_MAX_DIM: {
       const hsa_dim3_t grid_size = {UINT32_MAX, UINT32_MAX, UINT32_MAX};
@@ -294,7 +301,8 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       *((hsa_queue_type_t*)value) = HSA_QUEUE_TYPE_MULTI;
       break;
     case HSA_AGENT_INFO_NODE:
-      *((uint32_t*)value) = properties_.LocationId;
+      // TODO: associate with OS NUMA support (numactl / GetNumaProcessorNode).
+      *((uint32_t*)value) = node_id_;
       break;
     case HSA_AGENT_INFO_DEVICE:
       *((hsa_device_type_t*)value) = HSA_DEVICE_TYPE_GPU;
@@ -306,15 +314,15 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       ((uint32_t*)value)[0] = 16 * 1024;
       break;
     case HSA_AGENT_INFO_ISA:
-      return core::loader::Isa::Create(agent, (hsa_isa_t*)value);
+      return core::Isa::Create(agent, (hsa_isa_t*)value);
     case HSA_AGENT_INFO_EXTENSIONS:
       memset(value, 0, sizeof(uint8_t) * 128);
 
-      if (extensions.table.hsa_ext_program_finalize != NULL) {
+      if (extensions.table.hsa_ext_program_finalize_fn != NULL) {
         *((uint8_t*)value) = 1 << HSA_EXTENSION_FINALIZER;
       }
 
-      if (extensions.table.hsa_ext_image_create != NULL) {
+      if (extensions.table.hsa_ext_image_create_fn != NULL) {
         *((uint8_t*)value) |= 1 << HSA_EXTENSION_IMAGES;
       }
 
@@ -336,7 +344,7 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
     case HSA_EXT_AGENT_INFO_IMAGE_2DADEPTH_MAX_ELEMENTS:
     case HSA_EXT_AGENT_INFO_IMAGE_3D_MAX_ELEMENTS:
     case HSA_EXT_AGENT_INFO_IMAGE_ARRAY_MAX_LAYERS:
-      return hsa_ext_get_image_info_max_dim(public_handle(), attribute, value);
+      return hsa_amd_image_get_info_max_dim(public_handle(), attribute, value);
     case HSA_EXT_AGENT_INFO_MAX_IMAGE_RD_HANDLES:
       // TODO: hardcode based on OCL constants.
       *((uint32_t*)value) = 128;
@@ -348,25 +356,25 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
     case HSA_EXT_AGENT_INFO_MAX_SAMPLER_HANDLERS:
       // TODO: hardcode based on OCL constants.
       *((uint32_t*)value) = 16;
-    case HSA_EXT_AMD_AGENT_INFO_DEVICE_ID:
+    case HSA_AMD_AGENT_INFO_CHIP_ID:
       *((uint32_t*)value) = properties_.DeviceId;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_CACHELINE_SIZE:
+    case HSA_AMD_AGENT_INFO_CACHELINE_SIZE:
       // TODO: hardcode for now.
       // GCN whitepaper: cache line size is 64 byte long.
       *((uint32_t*)value) = 64;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
+    case HSA_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
       *((uint32_t*)value) =
           (properties_.NumFComputeCores / properties_.NumSIMDPerCU);
       break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY:
+    case HSA_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY:
       *((uint32_t*)value) = properties_.MaxEngineClockMhzFCompute;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_DRIVER_NODE_ID:
+    case HSA_AMD_AGENT_INFO_DRIVER_NODE_ID:
       *((uint32_t*)value) = node_id_;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_ADDRESS_WATCH_POINTS:
+    case HSA_AMD_AGENT_INFO_MAX_ADDRESS_WATCH_POINTS:
       *((uint32_t*)value) = static_cast<uint32_t>(
           1 << properties_.Capability.ui32.WatchPointsTotalBits);
       break;
@@ -392,7 +400,8 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type_t queue_type,
   ScratchInfo scratch;
 #if defined(HSA_LARGE_MODEL) && defined(__linux__)
   if (core::g_use_interrupt_wait) {
-    if (private_segment_size == UINT_MAX) private_segment_size = scratch_per_thread_;
+    if (private_segment_size == UINT_MAX)
+      private_segment_size = scratch_per_thread_;
     if (private_segment_size > 262128) return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
     scratch.size_per_thread = AlignUp(private_segment_size, 16);
     if (scratch.size_per_thread > 262128)
@@ -429,7 +438,7 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type_t queue_type,
 }
 
 void GpuAgent::TranslateTime(core::Signal* signal,
-                             hsa_amd_dispatch_time_t& time) {
+                             hsa_amd_profiling_dispatch_time_t& time) {
   // Ensure interpolation
   if (t1_.GPUClockCounter < signal->signal_.end_ts) SyncClocks();
 
@@ -445,25 +454,29 @@ void GpuAgent::TranslateTime(core::Signal* signal,
       double(t1_.SystemClockCounter));
 }
 
-bool GpuAgent::memory_type(hsa_amd_memory_type_t type) {
+bool GpuAgent::current_coherency_type(hsa_amd_coherency_type_t type) {
   ScopedAcquire<KernelMutex> Lock(&lock_);
-  if (type == current_memory_type_) return true;
+  if (type == current_coherency_type_) {
+    return true;
+  }
 
   HSA_CACHING_TYPE type0, type1;
-  if (current_memory_type_ == HSA_EXT_AMD_MEMORY_TYPE_COHERENT) {
+  if (current_coherency_type_ == HSA_AMD_COHERENCY_TYPE_COHERENT) {
     type0 = HSA_CACHING_NONCACHED;
     type1 = HSA_CACHING_CACHED;
-    type = HSA_EXT_AMD_MEMORY_TYPE_NONCOHERENT;
+    type = HSA_AMD_COHERENCY_TYPE_NONCOHERENT;
   } else {
     type0 = HSA_CACHING_CACHED;
     type1 = HSA_CACHING_NONCACHED;
-    type = HSA_EXT_AMD_MEMORY_TYPE_COHERENT;
+    type = HSA_AMD_COHERENCY_TYPE_COHERENT;
   }
+
   if (hsaKmtSetMemoryPolicy(node_id_, type0, type1,
                             reinterpret_cast<void*>(ape1_base_),
-                            ape1_size_) != HSAKMT_STATUS_SUCCESS)
+                            ape1_size_) != HSAKMT_STATUS_SUCCESS) {
     return false;
-  current_memory_type_ = type;
+  }
+  current_coherency_type_ = type;
   return true;
 }
 

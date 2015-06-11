@@ -63,8 +63,8 @@ typedef uint64_t uint64;
 #include <x86intrin.h>
 #else
 #error \
-    "Processor not identified.  " \
-    "Need to provide a lightweight approximate clock interface (aka __rdtsc())."
+    "Processor or compiler not identified.  " \
+    "Need to provide a lightweight approximate clock interface via function uint64_t __rdtsc() or adapt timer.h to your platform."
 #endif
 
 #define __forceinline __inline__ __attribute__((always_inline))

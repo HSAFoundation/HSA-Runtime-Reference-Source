@@ -167,6 +167,11 @@ std::string GetEnvVar(std::string env_var_name);
 /// @return: size_t, size of the accessible memory to the application.
 size_t GetUserModeVirtualMemorySize();
 
+/// @brief: Gets the max physical host system memory size.
+/// @param: void.
+/// @return: size_t, size of the physical host system memory.
+size_t GetUsablePhysicalHostMemorySize();
+
 /// @brief: Gets the virtual memory base address. It is hardcoded to 0.
 /// @param: void.
 /// @return: uintptr_t, always 0.
@@ -186,7 +191,7 @@ int DestroyOsEvent(EventHandle event);
 /// @brief os event api, wait on event
 /// @param: event Event handle
 /// @param: milli_seconds wait time
-/// @return: Indicate success or timeout 
+/// @return: Indicate success or timeout
 int WaitForOsEvent(EventHandle event, unsigned int milli_seconds);
 
 /// @brief os event api, set event state
@@ -199,6 +204,17 @@ int SetOsEvent(EventHandle event);
 /// @return: Whether event reset is correct
 int ResetOsEvent(EventHandle event);
 
+/// @brief reads a clock which is deemed to be accurate for elapsed time
+/// measurements, though not necessarilly fast to query
+/// @return clock counter value
+uint64_t ReadAccurateClock();
+
+/// @brief retrieves the frequency in Hz of the unit used in ReadAccurateClock.
+/// It does not necessarilly reflect the resolution of the clock, but is the
+/// value needed to convert a difference in the clock's counter value to elapsed
+/// seconds.  This frequency does not change at runtime.
+/// @return returns the frequency
+uint64_t AccurateClockFrequency();
 }
 
 #endif  // HSA_RUNTIME_CORE_UTIL_OS_H_

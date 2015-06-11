@@ -55,34 +55,29 @@
 #include "core/util/os.h"
 #include "core/util/utils.h"
 
-namespace core
-{
-  struct ExtTableInternal : public ExtTable
-  {
-    typedef decltype(hsa_ext_get_image_info_max_dim)* hsa_ext_get_image_info_max_dim_t;
+namespace core {
+struct ExtTableInternal : public ExtTable {
+  decltype(::hsa_amd_image_get_info_max_dim)* hsa_amd_image_get_info_max_dim_fn;
+};
 
-    hsa_ext_get_image_info_max_dim_t hsa_ext_get_image_info_max_dim;
-  };
+class ExtensionEntryPoints {
+ public:
+  ExtTableInternal table;
 
-	class ExtensionEntryPoints
-	{
-	public:
-		ExtTableInternal table;
+  ExtensionEntryPoints();
 
-		ExtensionEntryPoints();
+  bool Load(std::string library_name);
+  void Unload();
 
-		bool Load(std::string library_name);
-		void Unload();
+ private:
+  typedef void (*Load_t)(const ::ApiTable* table);
+  typedef void (*Unload_t)();
 
-private:
-	    typedef void(*Load_t)(const ::ApiTable* table);
-	    typedef void(*Unload_t)();
-		  
-	  	std::vector<os::LibHandle> libs_;
+  std::vector<os::LibHandle> libs_;
 
-      void InitTable();
-		DISALLOW_COPY_AND_ASSIGN(ExtensionEntryPoints);
-	};
+  void InitTable();
+  DISALLOW_COPY_AND_ASSIGN(ExtensionEntryPoints);
+};
 }
 
 #endif

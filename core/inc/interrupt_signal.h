@@ -68,8 +68,10 @@ namespace core {
 class InterruptSignal : public Signal {
  public:
   static HsaEvent* CreateEvent();
+  static void DestroyEvent(HsaEvent* evt);
 
-  explicit InterruptSignal(hsa_signal_value_t initial_value, HsaEvent* use_event=NULL);
+  explicit InterruptSignal(hsa_signal_value_t initial_value,
+                           HsaEvent* use_event = NULL);
 
   ~InterruptSignal();
 
@@ -170,6 +172,10 @@ class InterruptSignal : public Signal {
  private:
   /// @variable KFD event on which the interrupt signal is based on.
   HsaEvent* event_;
+
+  /// @variable Indicates whether the signal should release the event when it
+  /// closes or not.
+  bool free_event_;
 
   DISALLOW_COPY_AND_ASSIGN(InterruptSignal);
 };

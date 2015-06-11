@@ -119,9 +119,6 @@ void BuildTopology() {
 
     GpuAgent* gpu = NULL;
     if (node_prop.NumFComputeCores > 0) {
-      // TODO get proper data
-      node_prop.MaxEngineClockMhzFCompute = 720;
-
       // Get GPU cache information.
       // Similar to getting CPU cache but here we use FComputeIdLo.
       std::vector<HsaCacheProperties> cache_props(node_prop.NumCaches);
@@ -144,10 +141,6 @@ void BuildTopology() {
       core::Runtime::runtime_singleton_->RegisterAgent(gpu);
     }
 
-    // TODO : hardcoded DRAM speed configuration.
-    const uint32_t kWidth = 64;        // 64 bit.
-    const uint32_t kClockSpeed = 800;  // DDR3 1600.
-
     uint32_t num_mem_banks = node_prop.NumMemoryBanks;
     if (num_mem_banks > 0) {
       std::vector<HsaMemoryProperties> mem_props(num_mem_banks);
@@ -167,14 +160,6 @@ void BuildTopology() {
                 continue;
               }
 
-              // TODO: frequency value is 0 from KFD.
-              if (mem_props[mem_idx].MemoryClockMax == 0) {
-                mem_props[mem_idx].MemoryClockMax = kClockSpeed;
-              }
-
-              if (mem_props[mem_idx].Width == 0) {
-                mem_props[mem_idx].Width = kWidth;
-              }
             case HSA_HEAPTYPE_GPU_LDS:
             case HSA_HEAPTYPE_GPU_SCRATCH:
               if (gpu != NULL) {
@@ -198,20 +183,17 @@ void BuildTopology() {
     // Create host / system memory region since KFD does not report
     // virtual size.
     const uintptr_t system_base = os::GetUserModeVirtualMemoryBase();
-    const size_t system_size = os::GetUserModeVirtualMemorySize();
+    const size_t system_physical_size = os::GetUsablePhysicalHostMemorySize();
+    assert(system_physical_size != 0);
 
     HsaMemoryProperties default_mem_prop;
     std::memset(&default_mem_prop, 0, sizeof(HsaMemoryProperties));
 
-    // TODO: system memory width, clock.
     default_mem_prop.HeapType = HSA_HEAPTYPE_SYSTEM;
-    default_mem_prop.SizeInBytes = (HSAuint64)system_size;
+    default_mem_prop.SizeInBytes = (HSAuint64)system_physical_size;
     default_mem_prop.VirtualBaseAddress = (HSAuint64)(system_base);
-    default_mem_prop.Width = kWidth;
-    default_mem_prop.MemoryClockMax = kClockSpeed;
 
-    MemoryRegion* region =
-        new MemoryRegion(true, *cpu, default_mem_prop);
+    MemoryRegion* region = new MemoryRegion(true, *cpu, default_mem_prop);
 
     if (cpu != NULL) {
       cpu->RegisterMemoryProperties(*region);
@@ -234,9 +216,9 @@ void Load() {
 
 // Load finalizer and extension library
 #ifdef HSA_LARGE_MODEL
-  std::string extLib[] = {"hsa-runtime-ext64.dll", "libhsa-runtime-ext64.so"};
+  std::string extLib[] = {"hsa-runtime-ext64.dll", "libhsa-runtime-ext64.so.1"};
 #else
-  std::string extLib[] = {"hsa-runtime-ext.dll", "libhsa-runtime-ext.so"};
+  std::string extLib[] = {"hsa-runtime-ext.dll", "libhsa-runtime-ext.so.1"};
 #endif
   core::Runtime::runtime_singleton_->extensions_.Load(
       extLib[os_index(os::current_os)]);

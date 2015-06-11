@@ -70,10 +70,10 @@ struct ScratchInfo {
 class GpuAgentInt : public core::Agent {
  public:
   GpuAgentInt() : core::Agent(core::Agent::DeviceType::kAmdGpuDevice) {}
-  virtual bool memory_type(hsa_amd_memory_type_t type) = 0;
-  virtual hsa_amd_memory_type_t memory_type() const = 0;
+  virtual bool current_coherency_type(hsa_amd_coherency_type_t type) = 0;
+  virtual hsa_amd_coherency_type_t current_coherency_type() const = 0;
   virtual void TranslateTime(core::Signal* signal,
-                             hsa_amd_dispatch_time_t& time) = 0;
+                             hsa_amd_profiling_dispatch_time_t& time) = 0;
   virtual HSAuint32 node_id() const = 0;
 };
 
@@ -147,13 +147,16 @@ class GpuAgent : public GpuAgentInt {
     scratch_pool_.free(base);
   }
 
-  void TranslateTime(core::Signal* signal, hsa_amd_dispatch_time_t& time);
+  void TranslateTime(core::Signal* signal,
+                     hsa_amd_profiling_dispatch_time_t& time);
 
   uint16_t GetMicrocodeVersion() const;
 
-  bool memory_type(hsa_amd_memory_type_t type);
+  bool current_coherency_type(hsa_amd_coherency_type_t type);
 
-  hsa_amd_memory_type_t memory_type() const { return current_memory_type_; }
+  hsa_amd_coherency_type_t current_coherency_type() const {
+    return current_coherency_type_;
+  }
 
   __forceinline void SetApe1BaseAndSize(uintptr_t base, size_t size) {
     assert(ape1_base_ == 0 && ape1_size_ == 0 &&
@@ -194,7 +197,7 @@ class GpuAgent : public GpuAgentInt {
 
   size_t ape1_size_;
 
-  hsa_amd_memory_type_t current_memory_type_;
+  hsa_amd_coherency_type_t current_coherency_type_;
 
   SmallHeap scratch_pool_;
 

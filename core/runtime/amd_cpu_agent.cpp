@@ -158,7 +158,8 @@ hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       *((hsa_queue_type_t*)value) = static_cast<hsa_queue_type_t>(0);
       break;
     case HSA_AGENT_INFO_NODE:
-      *((uint32_t*)value) = properties_.LocationId;
+      // TODO: associate with OS NUMA support (numactl / GetNumaProcessorNode).
+      *((uint32_t*)value) = node_id_;
       break;
     case HSA_AGENT_INFO_DEVICE:
       *((hsa_device_type_t*)value) = HSA_DEVICE_TYPE_CPU;
@@ -207,23 +208,23 @@ hsa_status_t CpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
     case HSA_EXT_AGENT_INFO_MAX_SAMPLER_HANDLERS:
       *((uint32_t*)value) = 0;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_DEVICE_ID:
+    case HSA_AMD_AGENT_INFO_CHIP_ID:
       *((uint32_t*)value) = properties_.DeviceId;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_CACHELINE_SIZE:
+    case HSA_AMD_AGENT_INFO_CACHELINE_SIZE:
       // TODO: hardcode for now.
       *((uint32_t*)value) = 64;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
+    case HSA_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
       *((uint32_t*)value) = properties_.NumCPUCores;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY:
+    case HSA_AMD_AGENT_INFO_MAX_CLOCK_FREQUENCY:
       *((uint32_t*)value) = properties_.MaxEngineClockMhzCCompute;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_DRIVER_NODE_ID:
+    case HSA_AMD_AGENT_INFO_DRIVER_NODE_ID:
       *((uint32_t*)value) = node_id_;
       break;
-    case HSA_EXT_AMD_AGENT_INFO_MAX_ADDRESS_WATCH_POINTS:
+    case HSA_AMD_AGENT_INFO_MAX_ADDRESS_WATCH_POINTS:
       *((uint32_t*)value) = static_cast<uint32_t>(
           1 << properties_.Capability.ui32.WatchPointsTotalBits);
       break;

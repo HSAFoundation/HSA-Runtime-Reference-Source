@@ -137,7 +137,7 @@ class Runtime {
   hsa_status_t SetAsyncSignalHandler(hsa_signal_t signal,
                                      hsa_signal_condition_t cond,
                                      hsa_signal_value_t value,
-                                     hsa_ext_signal_handler handler, void* arg);
+                                     hsa_amd_signal_handler handler, void* arg);
 
  private:
   Runtime();
@@ -159,7 +159,7 @@ class Runtime {
 
     AllocationRegion() : region(NULL), assigned_agent_(NULL), size(0) {}
     AllocationRegion(const MemoryRegion* region_arg, size_t size_arg)
-        : region(region_arg), size(size_arg) {}
+        : region(region_arg), assigned_agent_(NULL), size(size_arg) {}
   };
 
   const AllocationRegion FindAllocatedRegion(const void* ptr);
@@ -190,6 +190,8 @@ class Runtime {
   // Contains the region, address, and size of previously allocated memory.
   std::map<const void*, AllocationRegion> allocation_map_;
 
+  uint64_t sys_clock_freq_;
+
   struct async_events_control_t {
     hsa_signal_t wake;
     os::Thread async_events_thread_;
@@ -204,11 +206,11 @@ class Runtime {
     std::vector<hsa_signal_t> signal_;
     std::vector<hsa_signal_condition_t> cond_;
     std::vector<hsa_signal_value_t> value_;
-    std::vector<hsa_ext_signal_handler> handler_;
+    std::vector<hsa_amd_signal_handler> handler_;
     std::vector<void*> arg_;
 
     void push_back(hsa_signal_t signal, hsa_signal_condition_t cond,
-                   hsa_signal_value_t value, hsa_ext_signal_handler handler,
+                   hsa_signal_value_t value, hsa_amd_signal_handler handler,
                    void* arg) {
       signal_.push_back(signal);
       cond_.push_back(cond);

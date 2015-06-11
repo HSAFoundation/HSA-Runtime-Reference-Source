@@ -45,11 +45,11 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "core/inc/interrupt_signal.h"
+#include "core/util/timer.h"
 
 namespace core {
 
-HsaEvent* InterruptSignal::CreateEvent()
-{
+HsaEvent* InterruptSignal::CreateEvent() {
   HsaEventDescriptor event_descriptor;
 #ifdef __linux__
   event_descriptor.EventType = HSA_EVENTTYPE_SIGNAL;
@@ -59,26 +59,28 @@ HsaEvent* InterruptSignal::CreateEvent()
   event_descriptor.SyncVar.SyncVar.UserData = NULL;
   event_descriptor.SyncVar.SyncVarSize = sizeof(hsa_signal_value_t);
   event_descriptor.NodeId = 0;
-  HsaEvent* ret=NULL;
+  HsaEvent* ret = NULL;
   hsaKmtCreateEvent(&event_descriptor, false, false, &ret);
   return ret;
 }
 
-InterruptSignal::InterruptSignal(hsa_signal_value_t initial_value, HsaEvent* use_event)
-    : Signal(initial_value) {
-  
-  if(use_event!=NULL)
-    event_=use_event;
-  else
-    event_=CreateEvent();
+void InterruptSignal::DestroyEvent(HsaEvent* evt) { hsaKmtDestroyEvent(evt); }
 
-  if(event_!=NULL)
-  {
+InterruptSignal::InterruptSignal(hsa_signal_value_t initial_value,
+                                 HsaEvent* use_event)
+    : Signal(initial_value) {
+  if (use_event != NULL) {
+    event_ = use_event;
+    free_event_ = false;
+  } else {
+    event_ = CreateEvent();
+    free_event_ = true;
+  }
+
+  if (event_ != NULL) {
     signal_.event_id = event_->EventId;
     signal_.event_mailbox_ptr = event_->EventData.HWData2;
-  }
-  else
-  {
+  } else {
     signal_.event_id = 0;
     signal_.event_mailbox_ptr = 0;
   }
@@ -91,7 +93,7 @@ InterruptSignal::~InterruptSignal() {
   hsaKmtSetEvent(event_);
   while (waiting_ != 0)
     ;
-  hsaKmtDestroyEvent(event_);
+  if (free_event_) hsaKmtDestroyEvent(event_);
   HSA::hsa_memory_deregister(this, sizeof(InterruptSignal));
 }
 
@@ -128,16 +130,18 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
 
   int64_t value;
 
-  uint64_t fast_start_time = __rdtsc();
-  //~200us at 4GHz - does not need to be an exact time, just a short while
-  const uint64_t kMaxElapsed = 800000;
+  timer::fast_clock::time_point start_time = timer::fast_clock::now();
+
+  // Set a polling timeout value
+  // Exact time is not hugely important, it should just be a short while which
+  // is smaller than the thread scheduling quantum (usually around 16ms)
+  const timer::fast_clock::duration kMaxElapsed = std::chrono::milliseconds(5);
 
   uint64_t hsa_freq;
   HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &hsa_freq);
-  const float invFreq = 1000.0f / hsa_freq;  // clock period in ms
-
-  uint64_t start_time, sys_time;
-  HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &start_time);
+  const timer::fast_clock::duration fast_timeout =
+      timer::duration_from_seconds<timer::fast_clock::duration>(
+          double(timeout) / double(hsa_freq));
 
   bool condition_met = false;
   while (true) {
@@ -167,19 +171,21 @@ hsa_signal_value_t InterruptSignal::WaitRelaxed(
     }
     if (condition_met) return hsa_signal_value_t(value);
 
-    uint64_t time = __rdtsc();
-    if (time - fast_start_time > kMaxElapsed) {
-      HSA::hsa_system_get_info(HSA_SYSTEM_INFO_TIMESTAMP, &sys_time);
-      if (sys_time - start_time > timeout) {
+    timer::fast_clock::time_point time = timer::fast_clock::now();
+    if (time - start_time > kMaxElapsed) {
+      if (time - start_time > fast_timeout) {
         value = atomic::Load(&signal_.value, std::memory_order_relaxed);
         return hsa_signal_value_t(value);
       }
       if (wait_hint != HSA_WAIT_STATE_ACTIVE) {
         uint32_t wait_ms;
-        if (timeout == -1)
+        auto time_remaining = fast_timeout - (time - start_time);
+        if ((timeout == -1) ||
+            (time_remaining > std::chrono::milliseconds(uint32_t(-1))))
           wait_ms = uint32_t(-1);
         else
-          wait_ms = uint32_t((timeout - (sys_time - start_time)) * invFreq);
+          wait_ms = timer::duration_cast<std::chrono::milliseconds>(
+                        time_remaining).count();
         hsaKmtWaitOnEvent(event_, wait_ms);
       }
     }
@@ -296,59 +302,67 @@ void InterruptSignal::SubAcqRel(hsa_signal_value_t value) {
 }
 
 hsa_signal_value_t InterruptSignal::ExchRelaxed(hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Exchange(&signal_.value, int64_t(value),
-                                             std::memory_order_relaxed));
+  hsa_signal_value_t ret = hsa_signal_value_t(atomic::Exchange(
+      &signal_.value, int64_t(value), std::memory_order_relaxed));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::ExchAcquire(hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Exchange(&signal_.value, int64_t(value),
-                                             std::memory_order_acquire));
+  hsa_signal_value_t ret = hsa_signal_value_t(atomic::Exchange(
+      &signal_.value, int64_t(value), std::memory_order_acquire));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::ExchRelease(hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Exchange(&signal_.value, int64_t(value),
-                                             std::memory_order_release));
+  hsa_signal_value_t ret = hsa_signal_value_t(atomic::Exchange(
+      &signal_.value, int64_t(value), std::memory_order_release));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::ExchAcqRel(hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Exchange(&signal_.value, int64_t(value),
-                                             std::memory_order_acq_rel));
+  hsa_signal_value_t ret = hsa_signal_value_t(atomic::Exchange(
+      &signal_.value, int64_t(value), std::memory_order_acq_rel));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::CasRelaxed(hsa_signal_value_t expected,
                                                hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Cas(&signal_.value, int64_t(value),
-                                        int64_t(expected),
-                                        std::memory_order_relaxed));
+  hsa_signal_value_t ret = hsa_signal_value_t(
+      atomic::Cas(&signal_.value, int64_t(value), int64_t(expected),
+                  std::memory_order_relaxed));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::CasAcquire(hsa_signal_value_t expected,
                                                hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Cas(&signal_.value, int64_t(value),
-                                        int64_t(expected),
-                                        std::memory_order_acquire));
+  hsa_signal_value_t ret = hsa_signal_value_t(
+      atomic::Cas(&signal_.value, int64_t(value), int64_t(expected),
+                  std::memory_order_acquire));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::CasRelease(hsa_signal_value_t expected,
                                                hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Cas(&signal_.value, int64_t(value),
-                                        int64_t(expected),
-                                        std::memory_order_release));
+  hsa_signal_value_t ret = hsa_signal_value_t(
+      atomic::Cas(&signal_.value, int64_t(value), int64_t(expected),
+                  std::memory_order_release));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 hsa_signal_value_t InterruptSignal::CasAcqRel(hsa_signal_value_t expected,
                                               hsa_signal_value_t value) {
-  return hsa_signal_value_t(atomic::Cas(&signal_.value, int64_t(value),
-                                        int64_t(expected),
-                                        std::memory_order_acq_rel));
+  hsa_signal_value_t ret = hsa_signal_value_t(
+      atomic::Cas(&signal_.value, int64_t(value), int64_t(expected),
+                  std::memory_order_acq_rel));
   hsaKmtSetEvent(event_);
+  return ret;
 }
 
 }  // namespace core

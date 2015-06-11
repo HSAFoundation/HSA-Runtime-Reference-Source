@@ -371,6 +371,15 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
 
   void* errors_data_;
 
+  // Shared event used for queue errors
+  static HsaEvent* queue_event_;
+
+  // Queue count - used to ref count queue_event_
+  static volatile uint32_t queue_count_;
+
+  // Mutex for queue_event_ manipulation
+  static KernelMutex queue_lock_;
+
   // Forbid copying and moving of this object
   DISALLOW_COPY_AND_ASSIGN(HwAqlCommandProcessor);
 };
