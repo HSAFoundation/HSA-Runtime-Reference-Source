@@ -56,7 +56,7 @@
 namespace amd {
 class MemoryRegion : public core::MemoryRegion {
  public:
-  MemoryRegion(bool fine_grain, const core::Agent& owner,
+  MemoryRegion(bool fine_grain, uint32_t node_id,
                const HsaMemoryProperties& mem_props);
 
   ~MemoryRegion();
@@ -97,10 +97,8 @@ class MemoryRegion : public core::MemoryRegion {
     return mem_props_.HeapType == HSA_HEAPTYPE_GPU_SCRATCH;
   }
 
-  __forceinline const core::Agent* owner() const { return owner_; }
-
  private:
-  const core::Agent* owner_;
+  uint32_t node_id_;
 
   const HsaMemoryProperties mem_props_;
 

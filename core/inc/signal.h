@@ -55,29 +55,9 @@
 
 #include "core/inc/thunk.h"
 
+#include "amd_hsa_signal.h"
+
 namespace core {
-
-enum HsaSignalType {
-  kHsaSignalInvalid = 0,
-  kHsaSignalAmd = 1,
-  kHsaSignalAmdDoorbell = -1,
-  kHsaSignalAmdKvDoorbell = -2
-};
-
-// brief AQL processor struct for signals.
-struct AmdHsaSignal {
-  int64_t type;
-  union {
-    volatile int64_t value;
-    volatile uint32_t* doorbell_ptr;
-  };
-  uint64_t event_mailbox_ptr;  // For event based notification, forwarded by KFD
-  uint32_t event_id;           // For event based notification, forwarded by KFD
-  uint32_t reserved;           // For padding
-  uint64_t
-      start_ts;     // Start timestamp for associated AQL packet, when profiled
-  uint64_t end_ts;  // End timestamp for associated AQL packet, when profiled
-};
 
 /// @brief An abstract base class which helps implement the public hsa_signal_t
 /// type (an opaque handle) and its associated APIs. At its core, signal uses
@@ -87,13 +67,14 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
  public:
   /// @brief Constructor initializes the signal with initial value.
   explicit Signal(hsa_signal_value_t initial_value) {
-    signal_.type = kHsaSignalInvalid;
+    signal_.kind = AMD_SIGNAL_KIND_INVALID;
     signal_.value = initial_value;
     invalid_ = false;
     waiting_ = 0;
+    retained_ = 0;
   }
 
-  virtual ~Signal() { signal_.type = kHsaSignalInvalid; }
+  virtual ~Signal() { signal_.kind = AMD_SIGNAL_KIND_INVALID; }
 
   bool IsValid() const {
     if (CheckedType::IsValid() && !invalid_) return true;
@@ -207,13 +188,16 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
                           hsa_signal_value_t* satisfying_value);
 
   /// @brief Allows special case interaction with signal destruction cleanup.
-  void IncWaiting() { atomic::Increment(&waiting_); }
-  void DecWaiting() { atomic::Decrement(&waiting_); }
+  void Retain() { atomic::Increment(&retained_); }
+  void Release() { atomic::Decrement(&retained_); }
+
+  /// @brief Checks if signal is currently in use.
+  bool InUse() const { return (retained_ != 0) || (waiting_ != 0); }
 
   /// @brief Structure which defines key signal elements like type and value.
   /// Address of this struct is used as a value for the opaque handle of type
   /// hsa_signal_t provided to the public API.
-  AmdHsaSignal signal_;
+  amd_signal_t signal_;
 
  protected:
   /// @variable  Indicates if signal is valid or not.
@@ -222,6 +206,8 @@ class Signal : public Checked<0x71FCCA6A3D5D5276> {
   /// @variable Indicates number of runtime threads waiting on this signal.
   /// Value of zero means no waits.
   volatile uint32_t waiting_;
+
+  volatile uint32_t retained_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Signal);

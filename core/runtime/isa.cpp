@@ -28,11 +28,8 @@ std::list<core::Isa> isa_list;
 //===----------------------------------------------------------------------===//
 
 // FIXME: move to common area (string utilities).
-bool Tokenize(
-  const std::string &in_str,
-  const char &in_del,
-  std::list<std::string> &out_tokens
-) {
+bool Tokenize(const std::string &in_str, const char &in_del,
+              std::list<std::string> &out_tokens) {
   try {
     std::size_t start = 0;
     std::size_t end = 0;
@@ -48,9 +45,9 @@ bool Tokenize(
   }
 
   return true;
-} // Tokenize
+}  // Tokenize
 
-} // namespace anonymous
+}  // namespace anonymous
 
 namespace core {
 
@@ -58,10 +55,8 @@ namespace core {
 // Isa.                                                                       //
 //===----------------------------------------------------------------------===//
 
-hsa_status_t Isa::Create(
-  const hsa_agent_t &in_agent,
-  hsa_isa_t *out_isa_handle
-) {
+hsa_status_t Isa::Create(const hsa_agent_t &in_agent,
+                         hsa_isa_t *out_isa_handle) {
   assert(out_isa_handle);
 
   try {
@@ -78,12 +73,9 @@ hsa_status_t Isa::Create(
 
   *out_isa_handle = Isa::Handle(&isa_list.back());
   return HSA_STATUS_SUCCESS;
-} // Isa::Create
+}  // Isa::Create
 
-hsa_status_t Isa::Create(
-  const char *in_isa_name,
-  hsa_isa_t *out_isa_handle
-) {
+hsa_status_t Isa::Create(const char *in_isa_name, hsa_isa_t *out_isa_handle) {
   assert(in_isa_name);
   assert(out_isa_handle);
 
@@ -101,7 +93,7 @@ hsa_status_t Isa::Create(
 
   *out_isa_handle = Isa::Handle(&isa_list.back());
   return HSA_STATUS_SUCCESS;
-} // Isa::Create
+}  // Isa::Create
 
 hsa_isa_t Isa::Handle(const Isa *in_isa_object) {
   assert(in_isa_object);
@@ -109,40 +101,35 @@ hsa_isa_t Isa::Handle(const Isa *in_isa_object) {
   hsa_isa_t out_isa_handle;
   out_isa_handle.handle = reinterpret_cast<uint64_t>(in_isa_object);
   return out_isa_handle;
-} // Isa::Handle
+}  // Isa::Handle
 
-Isa* Isa::Object(const hsa_isa_t &in_isa_handle) {
-  return reinterpret_cast<Isa*>(in_isa_handle.handle);
-} // Isa::Object
+Isa *Isa::Object(const hsa_isa_t &in_isa_handle) {
+  return amd::hsa::common::ObjectAt<Isa>(in_isa_handle.handle);
+}  // Isa::Object
 
 hsa_status_t Isa::Initialize(const hsa_agent_t &in_agent) {
-  uint32_t agent_device_id = 0;
-  hsa_status_t hsa_status_code = HSA::hsa_agent_get_info(
-    in_agent,
-    static_cast<hsa_agent_info_t>(HSA_AMD_AGENT_INFO_CHIP_ID),
-    &agent_device_id
-  );
-  if (HSA_STATUS_SUCCESS != hsa_status_code) {
-    return hsa_status_code;
-  }
+  // Convert agent handle to agent object
+  ::core::Agent *agent_object = ::core::Agent::Convert(in_agent);
+  compute_capability_ = agent_object->compute_capability();
 
   vendor_ = ISA_NAME_AMD_VENDOR;
   device_ = ISA_NAME_AMD_DEVICE;
 
-  compute_capability_.Initialize(agent_device_id);
-  if (!compute_capability_.IsValid())  {
+  // compute_capability_.Initialize(agent_device_id);
+  if (!compute_capability_.IsValid()) {
     // TODO: new error code?
     return HSA_STATUS_ERROR;
   }
 
-  std::ostringstream full_name_stream; full_name_stream << *this;
+  std::ostringstream full_name_stream;
+  full_name_stream << *this;
   if (!full_name_stream.good()) {
     return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
   full_name_ = full_name_stream.str();
 
   return HSA_STATUS_SUCCESS;
-} // Isa::Initialize
+}  // Isa::Initialize
 
 hsa_status_t Isa::Initialize(const char *in_isa_name) {
   assert(in_isa_name);
@@ -164,36 +151,37 @@ hsa_status_t Isa::Initialize(const char *in_isa_name) {
   device_ = isa_name_tokens.front();
   isa_name_tokens.pop_front();
 
-  compute_capability_.set_version_major(std::stoi(isa_name_tokens.front()));
+  uint32_t version_major = std::stoi(isa_name_tokens.front());
   isa_name_tokens.pop_front();
 
-  compute_capability_.set_version_minor(std::stoi(isa_name_tokens.front()));
+  uint32_t version_minor = std::stoi(isa_name_tokens.front());
   isa_name_tokens.pop_front();
 
-  compute_capability_.set_version_stepping(std::stoi(isa_name_tokens.front()));
+  uint32_t version_stepping = std::stoi(isa_name_tokens.front());
   isa_name_tokens.pop_front();
 
   assert(0 == isa_name_tokens.size());
+
+  compute_capability_.Initialize(version_major, version_minor,
+                                 version_stepping);
 
   if (!IsValid()) {
     return HSA_STATUS_ERROR_INVALID_ISA_NAME;
   }
 
   return HSA_STATUS_SUCCESS;
-} // Isa::Initialize
+}  // Isa::Initialize
 
 void Isa::Reset() {
   full_name_ = "";
   vendor_ = "";
   device_ = "";
   compute_capability_.Reset();
-} // Isa::Reset
+}  // Isa::Reset
 
-hsa_status_t Isa::GetInfo(
-  const hsa_isa_info_t &in_isa_attribute,
-  const uint32_t &in_call_convention_index,
-  void *out_value
-) const {
+hsa_status_t Isa::GetInfo(const hsa_isa_info_t &in_isa_attribute,
+                          const uint32_t &in_call_convention_index,
+                          void *out_value) const {
   assert(out_value);
 
   // TODO: only one call convention supported at the time.
@@ -203,7 +191,7 @@ hsa_status_t Isa::GetInfo(
 
   switch (in_isa_attribute) {
     case HSA_ISA_INFO_NAME_LENGTH: {
-      *((uint32_t*)out_value) = static_cast<uint32_t>(full_name_.size());
+      *((uint32_t *)out_value) = static_cast<uint32_t>(full_name_.size());
       return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_NAME: {
@@ -212,50 +200,45 @@ hsa_status_t Isa::GetInfo(
     }
     case HSA_ISA_INFO_CALL_CONVENTION_COUNT: {
       // TODO: hardcode for now.
-      *((uint32_t*)out_value) = 1;
+      *((uint32_t *)out_value) = 1;
       return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONT_SIZE: {
       // TODO: hardcode for now.
-      *((uint32_t*)out_value) = 64;
+      *((uint32_t *)out_value) = 64;
       return HSA_STATUS_SUCCESS;
     }
     case HSA_ISA_INFO_CALL_CONVENTION_INFO_WAVEFRONTS_PER_COMPUTE_UNIT: {
       // TODO: hardcode for now.
-      *((uint32_t*)out_value) = 40;
+      *((uint32_t *)out_value) = 40;
       return HSA_STATUS_SUCCESS;
     }
-    default: {
-      return HSA_STATUS_ERROR_INVALID_ARGUMENT;
-    }
+    default: { return HSA_STATUS_ERROR_INVALID_ARGUMENT; }
   }
-} // Isa::GetInfo
+}  // Isa::GetInfo
 
-hsa_status_t Isa::IsCompatible(
-  const Isa &in_isa_object,
-  bool *out_result
-) const {
+hsa_status_t Isa::IsCompatible(const Isa &in_isa_object,
+                               bool *out_result) const {
   assert(out_result);
 
   *out_result =
-    0 == full_name_.compare(in_isa_object.full_name()) ? true : false;
+      0 == full_name_.compare(in_isa_object.full_name()) ? true : false;
   return HSA_STATUS_SUCCESS;
-} // Isa::IsCompatible
+}  // Isa::IsCompatible
 
 bool Isa::IsValid() {
-  if (0 != vendor_.compare(ISA_NAME_AMD_VENDOR)) { return false; }
-  if (0 != device_.compare(ISA_NAME_AMD_DEVICE)) { return false; }
+  if (0 != vendor_.compare(ISA_NAME_AMD_VENDOR)) {
+    return false;
+  }
+  if (0 != device_.compare(ISA_NAME_AMD_DEVICE)) {
+    return false;
+  }
   return compute_capability_.IsValid();
-} // Isa::IsValid
+}  // Isa::IsValid
 
-std::ostream& operator<<(
-  std::ostream &out_stream,
-  const Isa &in_isa
-) {
-  return out_stream <<
-    in_isa.vendor_ << ":" <<
-    in_isa.device_ << ":" <<
-    in_isa.compute_capability_;
-} // ostream<<Isa
+std::ostream &operator<<(std::ostream &out_stream, const Isa &in_isa) {
+  return out_stream << in_isa.vendor_ << ":" << in_isa.device_ << ":"
+                    << in_isa.compute_capability_;
+}  // ostream<<Isa
 
-} // namespace core
+}  // namespace core

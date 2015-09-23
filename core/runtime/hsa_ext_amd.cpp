@@ -47,6 +47,7 @@
 #include "core/inc/runtime.h"
 #include "core/inc/agent.h"
 #include "core/inc/amd_gpu_agent.h"
+#include "core/inc/amd_hw_aql_command_processor.h"
 #include "core/inc/signal.h"
 #include "core/inc/thunk.h"
 
@@ -105,8 +106,8 @@ static __forceinline bool IsValid(T* ptr) {
 }
 
 hsa_status_t HSA_API
-    hsa_amd_coherency_get_type(hsa_agent_t agent_handle,
-                               hsa_amd_coherency_type_t* type) {
+hsa_amd_coherency_get_type(hsa_agent_t agent_handle,
+                           hsa_amd_coherency_type_t* type) {
   IS_OPEN();
 
   const core::Agent* agent = core::Agent::Convert(agent_handle);
@@ -154,21 +155,23 @@ hsa_status_t HSA_API hsa_amd_coherency_set_type(hsa_agent_t agent_handle,
 }
 
 hsa_status_t HSA_API
-    hsa_amd_profiling_set_profiler_enabled(hsa_queue_t* queue, int enable) {
+hsa_amd_profiling_set_profiler_enabled(hsa_queue_t* queue, int enable) {
   IS_OPEN();
 
   core::Queue* cmd_queue = core::Queue::Convert(queue);
 
   IS_VALID(cmd_queue);
 
-  cmd_queue->amd_queue_.enable_profiling = (enable != 0);
+  AMD_HSA_BITS_SET(cmd_queue->amd_queue_.queue_properties,
+                   AMD_QUEUE_PROPERTIES_ENABLE_PROFILING, (enable != 0));
 
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_amd_profiling_get_dispatch_time(
-    hsa_agent_t agent_handle, hsa_signal_t hsa_signal,
-    hsa_amd_profiling_dispatch_time_t* time) {
+hsa_status_t HSA_API
+hsa_amd_profiling_get_dispatch_time(hsa_agent_t agent_handle,
+                                    hsa_signal_t hsa_signal,
+                                    hsa_amd_profiling_dispatch_time_t* time) {
   IS_OPEN();
 
   IS_BAD_PTR(time);
@@ -193,10 +196,10 @@ hsa_status_t HSA_API hsa_amd_profiling_get_dispatch_time(
 }
 
 hsa_status_t HSA_API
-    hsa_amd_queue_sdma_create(hsa_agent_t agent_handle, size_t buffer_size,
-                              void* buffer_addr, uint64_t* queue_id,
-                              uint32_t** read_ptr, uint32_t** write_ptr,
-                              uint32_t** doorbell) {
+hsa_amd_queue_sdma_create(hsa_agent_t agent_handle, size_t buffer_size,
+                          void* buffer_addr, uint64_t* queue_id,
+                          uint32_t** read_ptr, uint32_t** write_ptr,
+                          uint32_t** doorbell) {
   IS_OPEN();
 
   static const size_t kPageSize = 4096;
@@ -245,11 +248,11 @@ hsa_status_t HSA_API hsa_amd_queue_sdma_destroy(uint64_t queue_id) {
 }
 
 uint32_t HSA_API
-    hsa_amd_signal_wait_any(uint32_t signal_count, hsa_signal_t* hsa_signals,
-                            hsa_signal_condition_t* conds,
-                            hsa_signal_value_t* values, uint64_t timeout_hint,
-                            hsa_wait_state_t wait_hint,
-                            hsa_signal_value_t* satisfying_value) {
+hsa_amd_signal_wait_any(uint32_t signal_count, hsa_signal_t* hsa_signals,
+                        hsa_signal_condition_t* conds,
+                        hsa_signal_value_t* values, uint64_t timeout_hint,
+                        hsa_wait_state_t wait_hint,
+                        hsa_signal_value_t* satisfying_value) {
   for (uint i = 0; i < signal_count; i++)
     assert(IsValid(core::Signal::Convert(hsa_signals[i])) && "Invalid signal.");
 
@@ -258,10 +261,10 @@ uint32_t HSA_API
 }
 
 hsa_status_t HSA_API
-    hsa_amd_signal_async_handler(hsa_signal_t hsa_signal,
-                                 hsa_signal_condition_t cond,
-                                 hsa_signal_value_t value,
-                                 hsa_amd_signal_handler handler, void* arg) {
+hsa_amd_signal_async_handler(hsa_signal_t hsa_signal,
+                             hsa_signal_condition_t cond,
+                             hsa_signal_value_t value,
+                             hsa_amd_signal_handler handler, void* arg) {
   IS_OPEN();
 
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -270,4 +273,15 @@ hsa_status_t HSA_API
 
   return core::Runtime::runtime_singleton_->SetAsyncSignalHandler(
       hsa_signal, cond, value, handler, arg);
+}
+
+hsa_status_t HSA_API hsa_amd_queue_cu_set_mask(const hsa_queue_t* queue,
+                                               uint32_t num_cu_mask_count,
+                                               const uint32_t* cu_mask) {
+  IS_OPEN();
+  IS_BAD_PTR(cu_mask);
+
+  core::Queue* cmd_queue = core::Queue::Convert(queue);
+  IS_VALID(cmd_queue);
+  return cmd_queue->SetCUMasking(num_cu_mask_count, cu_mask);
 }

@@ -171,6 +171,16 @@ class HwAqlCommandProcessor : public core::Queue, public core::Signal {
   /// @return uint64_t Value of write index before the update
   uint64_t AddWriteIndexRelease(uint64_t value);
 
+  /// @brief Set CU Masking
+  ///
+  /// @param num_cu_mask_count size of mask bit array
+  ///
+  /// @param cu_mask pointer to cu mask
+  ///
+  /// @return hsa_status_t
+  hsa_status_t SetCUMasking(const uint32_t num_cu_mask_count,
+                            const uint32_t* cu_mask);
+
   /// @brief This operation is illegal
   hsa_signal_value_t LoadRelaxed() {
     assert(false);

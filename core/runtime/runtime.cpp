@@ -51,7 +51,10 @@
 #include <string>
 #include <vector>
 
+#include "core/common/shared.h"
+
 #include "core/inc/hsa_ext_interface.h"
+#include "core/inc/amd_memory_region.h"
 #include "core/inc/amd_memory_registration.h"
 #include "core/inc/amd_topology.h"
 #include "core/inc/signal.h"
@@ -172,6 +175,11 @@ void Runtime::DestroyAgents() {
 
 void Runtime::RegisterMemoryRegion(MemoryRegion* region) {
   regions_.push_back(region);
+
+  if (reinterpret_cast<amd::MemoryRegion*>(region)->IsSystem()) {
+    assert(system_region_.handle == 0);
+    system_region_ = MemoryRegion::Convert(region);
+}
 }
 
 void Runtime::DestroyMemoryRegions() {
@@ -259,6 +267,9 @@ hsa_status_t Runtime::IterateAgent(hsa_status_t (*callback)(hsa_agent_t agent,
 }
 
 uint32_t Runtime::GetQueueId() { return atomic::Increment(&queue_count_); }
+
+amd::LoaderContext* Runtime::loader_context() { return &loader_context_; }
+amd::hsa::code::AmdHsaCodeManager* Runtime::code_manager() { return &code_manager_; }
 
 bool Runtime::Register(void* ptr, size_t length, bool registerWithDrivers) {
   return registered_memory_.Register(ptr, length, registerWithDrivers);
@@ -375,7 +386,7 @@ hsa_status_t Runtime::CopyMemory(void* dst, const void* src, size_t size) {
 
   if (is_dst_system && is_src_system) {
     // Both source and destination are system memory.
-    memcpy(dst, src, size);
+    memmove(dst, src, size);
     return HSA_STATUS_SUCCESS;
   }
 
@@ -400,7 +411,10 @@ hsa_status_t Runtime::CopyMemory(void* dst, const void* src, size_t size) {
   }
 
   const Agent* agent = (dst_agent != NULL) ? dst_agent : src_agent;
-  assert(agent != NULL);
+
+  if (agent == NULL) {
+    return HSA_STATUS_ERROR_INVALID_AGENT;
+  }
 
   return const_cast<Agent*>(agent)->DmaCopy(dst, src, size);
 }
@@ -416,6 +430,7 @@ void Runtime::DeregisterWithDrivers(void* ptr) {
 Runtime::Runtime() : ref_count_(0), queue_count_(0), sys_clock_freq_(0) {
   system_memory_limit_ =
       os::GetUserModeVirtualMemoryBase() + os::GetUserModeVirtualMemorySize();
+  system_region_.handle = 0;
 }
 
 void Runtime::Load() {
@@ -425,10 +440,38 @@ void Runtime::Load() {
 
   amd::Load();
 
+  // Setup system region allocator.
+  if (reinterpret_cast<amd::MemoryRegion*>(
+          core::MemoryRegion::Convert(system_region_))->fine_grain()) {
+    system_allocator_ = [](size_t size, size_t alignment) -> void * {
+      return _aligned_malloc(size, alignment);
+    };
+
+    system_deallocator_ = [](void* ptr) { _aligned_free(ptr); };
+  } else {
+    // TODO(bwicakso): might need memory pooling to cover allocation that
+    // requires less than 4096 bytes.
+    system_allocator_ = [&](size_t size, size_t alignment) -> void * {
+      assert(alignment <= 4096);
+      void* ptr = NULL;
+      return (HSA_STATUS_SUCCESS ==
+              HSA::hsa_memory_allocate(system_region_, size, &ptr))
+                 ? ptr
+                 : NULL;
+    };
+
+    system_deallocator_ = [](void* ptr) { HSA::hsa_memory_free(ptr); };
+  }
+
+  BaseShared::SetAllocateAndFree(system_allocator_, system_deallocator_);
+
   // Cache system clock frequency
   HsaClockCounters clocks;
   hsaKmtGetClockCounters(0, &clocks);
   sys_clock_freq_ = clocks.SystemClockFrequencyHz;
+
+  // Load extensions
+  LoadExtensions();
 
   // Load tools libraries
   LoadTools();
@@ -436,16 +479,43 @@ void Runtime::Load() {
 
 void Runtime::Unload() {
   UnloadTools();
+  UnloadExtensions();
+  loader_context_.Reset();
   DestroyAgents();
   DestroyMemoryRegions();
   CloseTools();
-  extensions_.Unload();
+
   async_events_control_.Shutdown();
+
   amd::Unload();
+
+  system_region_.handle = 0;
+}
+
+void Runtime::LoadExtensions() {
+// Load finalizer and extension library
+#ifdef HSA_LARGE_MODEL
+  static const std::string kFinalizerLib[] = {"hsa-ext-finalize64.dll",
+                                              "libhsa-ext-finalize64.so.1"};
+  static const std::string kImageLib[] = {"hsa-ext-image64.dll",
+                                          "libhsa-ext-image64.so.1"};
+#else
+  static const std::string kFinalizerLib[] = {"hsa-ext-finalize.dll",
+                                              "libhsa-ext-finalize.so.1"};
+  static const std::string kImageLib[] = {"hsa-ext-image.dll",
+                                          "libhsa-ext-image.so.1"};
+#endif
+  extensions_.Load(kFinalizerLib[os_index(os::current_os)]);
+  extensions_.Load(kImageLib[os_index(os::current_os)]);
+}
+
+void Runtime::UnloadExtensions() {
+  extensions_.Unload();
 }
 
 void Runtime::LoadTools() {
-  typedef void (*tool_init_t)(::ApiTable*);
+  typedef bool (*tool_init_t)(::ApiTable*, uint64_t, uint64_t,
+                              const char* const*);
   typedef Agent* (*tool_wrap_t)(Agent*);
   typedef void (*tool_add_t)(Runtime*);
 
@@ -456,6 +526,7 @@ void Runtime::LoadTools() {
   std::string tool_names = os::GetEnvVar("HSA_TOOLS_LIB");
   if (tool_names != "") {
     std::vector<std::string> names = parse_tool_names(tool_names);
+    std::vector<const char*> failed;
     for (int i = 0; i < names.size(); i++) {
       os::LibHandle tool = os::LoadLib(names[i]);
 
@@ -466,8 +537,14 @@ void Runtime::LoadTools() {
 
         tool_init_t ld;
         ld = (tool_init_t)os::GetExportAddress(tool, "OnLoad");
-        if (ld) ld(&hsa_api_table_.table);
-
+        if (ld) {
+          if (!ld(&hsa_api_table_.table, 0,
+                  failed.size(), &failed[0])) {
+            failed.push_back(names[i].c_str());
+            os::CloseLib(tool);
+            continue;
+          }
+        }
         tool_wrap_t wrap;
         wrap = (tool_wrap_t)os::GetExportAddress(tool, "WrapAgent");
         if (wrap) {
@@ -558,7 +635,7 @@ hsa_status_t Runtime::SetAsyncSignalHandler(hsa_signal_t signal,
   if (!core::g_use_interrupt_wait) return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
 
   // Indicate that this signal is in use.
-  hsa_signal_handle(signal)->IncWaiting();
+  hsa_signal_handle(signal)->Retain();
 
   ScopedAcquire<KernelMutex>(&async_events_control_.lock);
 
@@ -611,7 +688,7 @@ void Runtime::async_events_loop(void*) {
       bool keep =
           async_events_.handler_[index](value, async_events_.arg_[index]);
       if (!keep) {
-        hsa_signal_handle(async_events_.signal_[index])->DecWaiting();
+        hsa_signal_handle(async_events_.signal_[index])->Release();
         async_events_.copy_index(index, async_events_.size() - 1);
         async_events_.pop_back();
       }
@@ -632,7 +709,7 @@ void Runtime::async_events_loop(void*) {
     index = 0;
     while (index != async_events_.size()) {
       if (!hsa_signal_handle(async_events_.signal_[index])->IsValid()) {
-        hsa_signal_handle(async_events_.signal_[index])->DecWaiting();
+        hsa_signal_handle(async_events_.signal_[index])->Release();
         async_events_.copy_index(index, async_events_.size() - 1);
         async_events_.pop_back();
         continue;
@@ -643,11 +720,11 @@ void Runtime::async_events_loop(void*) {
 
   // Release wait count of all pending signals
   for (size_t i = 1; i < async_events_.size(); i++)
-    hsa_signal_handle(async_events_.signal_[i])->DecWaiting();
+    hsa_signal_handle(async_events_.signal_[i])->Release();
   async_events_.clear();
 
   for (size_t i = 0; i < new_async_events_.size(); i++)
-    hsa_signal_handle(new_async_events_.signal_[i])->DecWaiting();
+    hsa_signal_handle(new_async_events_.signal_[i])->Release();
   new_async_events_.clear();
 }
 

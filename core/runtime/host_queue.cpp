@@ -72,12 +72,15 @@ HostQueue::HostQueue(hsa_region_t region, uint32_t ring_size,
   amd_queue_.hsa_queue.type = type;
   amd_queue_.hsa_queue.features = features;
 #ifdef HSA_LARGE_MODEL
-  amd_queue_.is_ptr64 = 1;
+  AMD_HSA_BITS_SET(
+      amd_queue_.queue_properties, AMD_QUEUE_PROPERTIES_IS_PTR64, 1);
 #else
-  amd_queue_.is_ptr64 = 0;
+  AMD_HSA_BITS_SET(
+      amd_queue_.queue_properties, AMD_QUEUE_PROPERTIES_IS_PTR64, 0);
 #endif
   amd_queue_.write_dispatch_id = amd_queue_.read_dispatch_id = 0;
-  amd_queue_.enable_profiling = 0;
+  AMD_HSA_BITS_SET(
+      amd_queue_.queue_properties, AMD_QUEUE_PROPERTIES_ENABLE_PROFILING, 0);
 
   active_ = true;
 }

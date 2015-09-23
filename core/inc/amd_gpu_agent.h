@@ -65,6 +65,7 @@ struct ScratchInfo {
   void* queue_base;
   size_t size;
   size_t size_per_thread;
+  ptrdiff_t queue_process_offset;
 };
 
 class GpuAgentInt : public core::Agent {
@@ -84,7 +85,7 @@ class GpuAgent : public GpuAgentInt {
 
   ~GpuAgent();
 
-  void RegisterMemoryProperties(core::MemoryRegion& region);
+  virtual void RegisterMemoryProperties(core::MemoryRegion& region);
 
   hsa_status_t IterateRegion(hsa_status_t (*callback)(hsa_region_t region,
                                                       void* data),
@@ -140,6 +141,8 @@ class GpuAgent : public GpuAgentInt {
     }
     ScopedAcquire<KernelMutex> lock(&sclock_);
     scratch.queue_base = scratch_pool_.alloc(scratch.size);
+    scratch.queue_process_offset =
+        uintptr_t(scratch.queue_base) - uintptr_t(scratch_pool_.base());
   }
 
   void ReleaseQueueScratch(void* base) {
@@ -158,13 +161,6 @@ class GpuAgent : public GpuAgentInt {
     return current_coherency_type_;
   }
 
-  __forceinline void SetApe1BaseAndSize(uintptr_t base, size_t size) {
-    assert(ape1_base_ == 0 && ape1_size_ == 0 &&
-           "There should be only one ape1 segment");
-    ape1_base_ = base;
-    ape1_size_ = size;
-  }
-
   __forceinline HSAuint32 node_id() const { return node_id_; }
 
   __forceinline const HsaNodeProperties& properties() const {
@@ -181,7 +177,7 @@ class GpuAgent : public GpuAgentInt {
     return regions_;
   }
 
- private:
+ protected:
   static const uint32_t minAqlSize_ = 0x1000;   // 4KB min
   static const uint32_t maxAqlSize_ = 0x20000;  // 8MB max
 
@@ -190,12 +186,6 @@ class GpuAgent : public GpuAgentInt {
   const HSAuint32 node_id_;
 
   const HsaNodeProperties properties_;
-
-  std::vector<HsaCacheProperties> cache_props_;
-
-  uintptr_t ape1_base_;
-
-  size_t ape1_size_;
 
   hsa_amd_coherency_type_t current_coherency_type_;
 
@@ -211,7 +201,14 @@ class GpuAgent : public GpuAgentInt {
 
   HsaClockCounters t0_, t1_;
 
+  std::vector<HsaCacheProperties> cache_props_;
+
   std::vector<const core::MemoryRegion*> regions_;
+
+ private:
+  uintptr_t ape1_base_;
+
+  size_t ape1_size_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuAgent);
 };

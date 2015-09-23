@@ -53,7 +53,8 @@
 #include "core/inc/checked.h"
 #include "core/util/utils.h"
 
-#include "amd_queue_interface.h"
+#include <sstream>
+#include "amd_hsa_queue.h"
 
 namespace core {
 struct AqlPacket {
@@ -68,6 +69,49 @@ struct AqlPacket {
     const uint8_t packet_type = dispatch.header >> HSA_PACKET_HEADER_TYPE;
     return (packet_type > HSA_PACKET_TYPE_INVALID &&
             packet_type <= HSA_PACKET_TYPE_BARRIER_OR);
+  }
+
+  std::string string() const {
+    std::stringstream string;
+    uint8_t type = ((dispatch.header >> HSA_PACKET_HEADER_TYPE) &
+                    ((1 << HSA_PACKET_HEADER_WIDTH_TYPE) - 1));
+
+    const char* type_names[] = {
+        "HSA_PACKET_TYPE_VENDOR_SPECIFIC", "HSA_PACKET_TYPE_INVALID",
+        "HSA_PACKET_TYPE_KERNEL_DISPATCH", "HSA_PACKET_TYPE_BARRIER_AND",
+        "HSA_PACKET_TYPE_AGENT_DISPATCH",  "HSA_PACKET_TYPE_BARRIER_OR"};
+
+    string << "type: " << type_names[type]
+           << "\nbarrier: " << ((dispatch.header >> HSA_PACKET_HEADER_BARRIER) &
+                                ((1 << HSA_PACKET_HEADER_WIDTH_BARRIER) - 1))
+           << "\nacquire: "
+           << ((dispatch.header >> HSA_PACKET_HEADER_ACQUIRE_FENCE_SCOPE) &
+               ((1 << HSA_PACKET_HEADER_WIDTH_ACQUIRE_FENCE_SCOPE) - 1))
+           << "\nrelease: "
+           << ((dispatch.header >> HSA_PACKET_HEADER_RELEASE_FENCE_SCOPE) &
+               ((1 << HSA_PACKET_HEADER_WIDTH_RELEASE_FENCE_SCOPE) - 1));
+
+    if (type == HSA_PACKET_TYPE_KERNEL_DISPATCH) {
+      string << "\nDim: " << dispatch.setup
+             << "\nworkgroup_size: " << dispatch.workgroup_size_x << ", "
+             << dispatch.workgroup_size_y << ", " << dispatch.workgroup_size_z
+             << "\ngrid_size: " << dispatch.grid_size_x << ", "
+             << dispatch.grid_size_y << ", " << dispatch.grid_size_z
+             << "\nprivate_size: " << dispatch.private_segment_size
+             << "\ngroup_size: " << dispatch.group_segment_size
+             << "\nkernel_object: " << dispatch.kernel_object
+             << "\nkern_arg: " << dispatch.kernarg_address
+             << "\nsignal: " << dispatch.completion_signal.handle;
+    }
+
+    if ((type == HSA_PACKET_TYPE_BARRIER_AND) ||
+        (type == HSA_PACKET_TYPE_BARRIER_OR)) {
+      for (int i = 0; i < 5; i++)
+        string << "\ndep[" << i << "]: " << barrier_and.dep_signal[i].handle;
+      string << "\nsignal: " << barrier_and.completion_signal.handle;
+    }
+
+    return string.str();
   }
 };
 
@@ -219,15 +263,29 @@ class Queue : public Checked<0xFA3906A679F9DB49> {
   /// @return uint64_t Value of write index before the update
   virtual uint64_t AddWriteIndexRelease(uint64_t value) = 0;
 
+  /// @brief Set CU Masking
+  ///
+  /// @param num_cu_mask_count size of mask bit array
+  ///
+  /// @param cu_mask pointer to cu mask
+  ///
+  /// @return hsa_status_t
+  virtual hsa_status_t SetCUMasking(const uint32_t num_cu_mask_count,
+                                    const uint32_t* cu_mask) = 0;
+
   // Handle of Amd Queue struct
   amd_queue_t amd_queue_;
 
   hsa_queue_t* public_handle() const { return public_handle_; }
 
  protected:
-   static void set_public_handle(Queue* ptr, hsa_queue_t* handle) { ptr->do_set_public_handle(handle); }
-   virtual void do_set_public_handle(hsa_queue_t* handle) { public_handle_=handle; }
-   hsa_queue_t* public_handle_;
+  static void set_public_handle(Queue* ptr, hsa_queue_t* handle) {
+    ptr->do_set_public_handle(handle);
+  }
+  virtual void do_set_public_handle(hsa_queue_t* handle) {
+    public_handle_ = handle;
+  }
+  hsa_queue_t* public_handle_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Queue);

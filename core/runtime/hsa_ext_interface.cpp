@@ -211,7 +211,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
 
   void* ptr;
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_create");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_create_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_create_fn ==
                (decltype(::hsa_ext_program_create)*)hsa_ext_null &&
@@ -219,7 +219,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_program_create_fn = (decltype(::hsa_ext_program_create)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_destroy");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_destroy_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_destroy_fn ==
                (decltype(::hsa_ext_program_destroy)*)hsa_ext_null &&
@@ -228,7 +228,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_program_destroy)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_add_module");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_add_module_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_add_module_fn ==
                (decltype(::hsa_ext_program_add_module)*)hsa_ext_null &&
@@ -237,7 +237,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_program_add_module)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_iterate_modules");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_iterate_modules_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_iterate_modules_fn ==
                (decltype(::hsa_ext_program_iterate_modules)*)hsa_ext_null &&
@@ -246,7 +246,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_program_iterate_modules)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_get_info");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_get_info_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_get_info_fn ==
                (decltype(::hsa_ext_program_get_info)*)hsa_ext_null &&
@@ -255,7 +255,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_program_get_info)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_program_finalize");
+  ptr = os::GetExportAddress(lib, "hsa_ext_program_finalize_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_program_finalize_fn ==
                (decltype(::hsa_ext_program_finalize)*)hsa_ext_null &&
@@ -264,7 +264,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_program_finalize)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_get_capability");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_get_capability_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_get_capability_fn ==
                (decltype(::hsa_ext_image_get_capability)*)hsa_ext_null &&
@@ -273,7 +273,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_image_get_capability)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_data_get_info");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_data_get_info_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_data_get_info_fn ==
                (decltype(::hsa_ext_image_data_get_info)*)hsa_ext_null &&
@@ -282,7 +282,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_image_data_get_info)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_create");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_create_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_create_fn ==
                (decltype(::hsa_ext_image_create)*)hsa_ext_null &&
@@ -290,7 +290,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_create_fn = (decltype(::hsa_ext_image_create)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_import");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_import_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_import_fn ==
                (decltype(::hsa_ext_image_import)*)hsa_ext_null &&
@@ -298,7 +298,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_import_fn = (decltype(::hsa_ext_image_import)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_export");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_export_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_export_fn ==
                (decltype(::hsa_ext_image_export)*)hsa_ext_null &&
@@ -306,7 +306,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_export_fn = (decltype(::hsa_ext_image_export)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_copy");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_copy_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_copy_fn ==
                (decltype(::hsa_ext_image_copy)*)hsa_ext_null &&
@@ -314,7 +314,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_copy_fn = (decltype(::hsa_ext_image_copy)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_clear");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_clear_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_clear_fn ==
                (decltype(::hsa_ext_image_clear)*)hsa_ext_null &&
@@ -322,7 +322,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_clear_fn = (decltype(::hsa_ext_image_clear)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_image_destroy");
+  ptr = os::GetExportAddress(lib, "hsa_ext_image_destroy_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_image_destroy_fn ==
                (decltype(::hsa_ext_image_destroy)*)hsa_ext_null &&
@@ -330,7 +330,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_image_destroy_fn = (decltype(::hsa_ext_image_destroy)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_sampler_create");
+  ptr = os::GetExportAddress(lib, "hsa_ext_sampler_create_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_sampler_create_fn ==
                (decltype(::hsa_ext_sampler_create)*)hsa_ext_null &&
@@ -338,7 +338,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
     table.hsa_ext_sampler_create_fn = (decltype(::hsa_ext_sampler_create)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_ext_sampler_destroy");
+  ptr = os::GetExportAddress(lib, "hsa_ext_sampler_destroy_impl");
   if (ptr != NULL) {
     assert(table.hsa_ext_sampler_destroy_fn ==
                (decltype(::hsa_ext_sampler_destroy)*)hsa_ext_null &&
@@ -347,7 +347,7 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_ext_sampler_destroy)*)ptr;
   }
 
-  ptr = os::GetExportAddress(lib, "hsa_amd_image_get_info_max_dim");
+  ptr = os::GetExportAddress(lib, "hsa_amd_image_get_info_max_dim_impl");
   if (ptr != NULL) {
     assert(table.hsa_amd_image_get_info_max_dim_fn ==
                (decltype(::hsa_amd_image_get_info_max_dim)*)hsa_ext_null &&
@@ -356,6 +356,9 @@ bool ExtensionEntryPoints::Load(std::string library_name) {
         (decltype(::hsa_amd_image_get_info_max_dim)*)ptr;
   }
 
+  core::hsa_internal_api_table_.extension_backup=table;
+  core::hsa_internal_api_table_.table.std_exts_=&core::hsa_internal_api_table_.extension_backup;
+  
   ptr = os::GetExportAddress(lib, "Load");
   if (ptr != NULL) {
     ((Load_t)ptr)(&core::hsa_internal_api_table_.table);

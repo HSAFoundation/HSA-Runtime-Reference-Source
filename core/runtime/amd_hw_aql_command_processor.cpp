@@ -193,8 +193,10 @@ HwAqlCommandProcessor::HwAqlCommandProcessor(
 
   // Populate doorbell signal structure.
   memset(&signal_, 0, sizeof(signal_));
-  signal_.type = core::kHsaSignalAmdKvDoorbell;
-  signal_.doorbell_ptr = (volatile uint32_t*)queue_rsrc.Queue_DoorBell;
+  signal_.kind = AMD_SIGNAL_KIND_LEGACY_DOORBELL;
+  signal_.legacy_hardware_doorbell_ptr =
+      (volatile uint32_t*)queue_rsrc.Queue_DoorBell;
+  signal_.queue_ptr = &amd_queue_;
 
   // Populate amd_queue_ structure.
   amd_queue_.hsa_queue.type = HSA_QUEUE_TYPE_MULTI;
@@ -210,49 +212,12 @@ HwAqlCommandProcessor::HwAqlCommandProcessor(
   amd_queue_.max_cu_id = (props.NumFComputeCores / props.NumSIMDPerCU) - 1;
   amd_queue_.max_wave_id = props.MaxWavesPerSIMD - 1;
 
-  MAKE_NAMED_SCOPE_GUARD(EventGuard, [&]() {
-    ScopedAcquire<KernelMutex> _lock(&queue_lock_);
-    queue_count_--;
-    if (queue_count_ == 0) {
-      core::InterruptSignal::DestroyEvent(queue_event_);
-      queue_event_ = NULL;
-    }
-  });
-
-  MAKE_NAMED_SCOPE_GUARD(SignalGuard, [&]() {
-    HSA::hsa_signal_destroy(amd_queue_.queue_inactive_signal);
-  });
-#if defined(HSA_LARGE_MODEL) && defined(__linux__)
-  if (core::g_use_interrupt_wait) {
-    {
-      ScopedAcquire<KernelMutex> _lock(&queue_lock_);
-      queue_count_++;
-      if (queue_event_ == NULL) {
-        assert(queue_count_ == 1 &&
-               "Inconsistency in queue event reference counting found.\n");
-        queue_event_ = core::InterruptSignal::CreateEvent();
-        if (queue_event_ == NULL) return;
-      }
-    }
-    auto signal = new core::InterruptSignal(0, queue_event_);
-    amd_queue_.queue_inactive_signal = core::InterruptSignal::Convert(signal);
-    if (hsa_amd_signal_async_handler(
-            amd_queue_.queue_inactive_signal, HSA_SIGNAL_CONDITION_NE, 0,
-            DynamicScratchHandler, this) != HSA_STATUS_SUCCESS)
-      return;
-  } else {
-    EventGuard.Dismiss();
-    SignalGuard.Dismiss();
-  }
-#else
-  EventGuard.Dismiss();
-  SignalGuard.Dismiss();
-#endif
-
 #ifdef HSA_LARGE_MODEL
-  amd_queue_.is_ptr64 = 1;
+  AMD_HSA_BITS_SET(amd_queue_.queue_properties, AMD_QUEUE_PROPERTIES_IS_PTR64,
+                   1);
 #else
-  amd_queue_.is_ptr64 = 0;
+  AMD_HSA_BITS_SET(amd_queue_.queue_properties, AMD_QUEUE_PROPERTIES_IS_PTR64,
+                   0);
 #endif
 
   // Populate scratch resource descriptor in amd_queue_.
@@ -293,11 +258,9 @@ HwAqlCommandProcessor::HwAqlCommandProcessor(
   amd_queue_.scratch_resource_descriptor[2] = srd2.u32All;
   amd_queue_.scratch_resource_descriptor[3] = srd3.u32All;
 
-// Populate flat scratch parameters in amd_queue_.
-#if 0
-      // Per-VMID scratch pool with queue offsets not yet configured.
-      amd_queue_.scratch_backing_memory_location = 0;
-#endif
+  // Populate flat scratch parameters in amd_queue_.
+  amd_queue_.scratch_backing_memory_location =
+      queue_scratch_.queue_process_offset;
   amd_queue_.scratch_backing_memory_byte_size = queue_scratch_.size;
   amd_queue_.scratch_workitem_byte_size =
       uint32_t(queue_scratch_.size_per_thread);
@@ -344,10 +307,48 @@ HwAqlCommandProcessor::HwAqlCommandProcessor(
   assert(amd_queue_.group_segment_aperture_base_hi != NULL &&
          "No group region found.");
 
-#if 0
-      // Private aperture is not yet provided by thunk.
-      assert(amd_queue_.private_segment_aperture_base_hi != NULL &&
-        "No private region found.");
+  if (os::GetEnvVar("HSA_CHECK_FLAT_SCRATCH") == "1") {
+    assert(amd_queue_.private_segment_aperture_base_hi != NULL &&
+           "No private region found.");
+  }
+
+  MAKE_NAMED_SCOPE_GUARD(EventGuard, [&]() {
+    ScopedAcquire<KernelMutex> _lock(&queue_lock_);
+    queue_count_--;
+    if (queue_count_ == 0) {
+      core::InterruptSignal::DestroyEvent(queue_event_);
+      queue_event_ = NULL;
+    }
+  });
+
+  MAKE_NAMED_SCOPE_GUARD(SignalGuard, [&]() {
+    HSA::hsa_signal_destroy(amd_queue_.queue_inactive_signal);
+  });
+#if defined(HSA_LARGE_MODEL) && defined(__linux__)
+  if (core::g_use_interrupt_wait) {
+    {
+      ScopedAcquire<KernelMutex> _lock(&queue_lock_);
+      queue_count_++;
+      if (queue_event_ == NULL) {
+        assert(queue_count_ == 1 &&
+               "Inconsistency in queue event reference counting found.\n");
+        queue_event_ = core::InterruptSignal::CreateEvent();
+        if (queue_event_ == NULL) return;
+      }
+    }
+    auto signal = new core::InterruptSignal(0, queue_event_);
+    amd_queue_.queue_inactive_signal = core::InterruptSignal::Convert(signal);
+    if (hsa_amd_signal_async_handler(
+            amd_queue_.queue_inactive_signal, HSA_SIGNAL_CONDITION_NE, 0,
+            DynamicScratchHandler, this) != HSA_STATUS_SUCCESS)
+      return;
+  } else {
+    EventGuard.Dismiss();
+    SignalGuard.Dismiss();
+  }
+#else
+  EventGuard.Dismiss();
+  SignalGuard.Dismiss();
 #endif
 
   valid_ = true;
@@ -496,11 +497,12 @@ void HwAqlCommandProcessor::StoreRelaxed(hsa_signal_value_t value) {
       uint64_t queue_size_mask =
           ((1 + QUEUE_FULL_WORKAROUND) * amd_queue_.hsa_queue.size) - 1;
 
-      *(volatile uint32_t*)signal_.doorbell_ptr =
+      *(volatile uint32_t*)signal_.legacy_hardware_doorbell_ptr =
           uint32_t((legacy_dispatch_id & queue_size_mask) *
                    (sizeof(core::AqlPacket) / sizeof(uint32_t)));
     } else if (doorbell_type_ == 1) {
-      *(volatile uint32_t*)signal_.doorbell_ptr = uint32_t(legacy_dispatch_id);
+      *(volatile uint32_t*)signal_.legacy_hardware_doorbell_ptr =
+          uint32_t(legacy_dispatch_id);
     } else {
       assert(false && "Agent has unsupported doorbell semantics");
     }
@@ -649,11 +651,17 @@ void HwAqlCommandProcessor::AllocRegisteredRingBuffer(
 #endif
 #else
   // Allocate storage for the ring buffer.
-  ring_buf_alloc_bytes_ = queue_size_pkts * sizeof(AqlPacket);
-  ring_buf_ = _aligned_malloc(ring_buf_alloc_bytes_, kRingBufferAlignBytes);
+  HsaMemFlags flags;
+  flags.Value = 0;
+  flags.ui32.HostAccess = 1;
+  flags.ui32.AtomicAccessPartial = 1;
+  flags.ui32.ExecuteAccess = 1;
 
-  // Register the ring buffer for HW access.
-  HSA::hsa_memory_register(ring_buf_, ring_buf_alloc_bytes_);
+  ring_buf_alloc_bytes_ = queue_size_pkts * sizeof(AqlPacket);
+  auto err = hsaKmtAllocMemory(agent->node_id(), ring_buf_alloc_bytes_, flags,
+                               (void**)&ring_buf_);
+  assert(err == HSAKMT_STATUS_SUCCESS &&
+         "AQL queue memory allocation failure.");
 #endif
 }
 
@@ -669,7 +677,7 @@ void HwAqlCommandProcessor::FreeRegisteredRingBuffer() {
   UnmapViewOfFile((void*)(uintptr_t(ring_buf_) + (ring_buf_alloc_bytes_ / 2)));
 #endif
 #else
-  _aligned_free(ring_buf_);
+  hsaKmtFreeMemory(ring_buf_, ring_buf_alloc_bytes_);
 #endif
 
   ring_buf_ = NULL;
@@ -692,16 +700,22 @@ bool HwAqlCommandProcessor::DynamicScratchHandler(hsa_signal_value_t error_code,
 
     queue->agent_->ReleaseQueueScratch(scratch.queue_base);
 
-    uint32_t scratch_request =
+    const core::AqlPacket& pkt =
         ((core::AqlPacket*)queue->amd_queue_.hsa_queue
-             .base_address)[queue->amd_queue_.read_dispatch_id]
-            .dispatch.private_segment_size;
+             .base_address)[queue->amd_queue_.read_dispatch_id];
 
-    if (scratch_request == 0) {
-      // Malformed AQL packet
+    uint32_t scratch_request = pkt.dispatch.private_segment_size;
+
+    const amd_kernel_code_t* kernel_code_object =
+        (amd_kernel_code_t*)pkt.dispatch.kernel_object;
+
+    if (scratch_request <
+        kernel_code_object->workitem_private_segment_byte_size) {
+      // Malformed AQL packet - insufficient scratch request
       queue->Inactivate();
-      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_PACKET_FORMAT,
-                              queue->public_handle(), queue->errors_data_);
+      if (queue->errors_callback_ != NULL)
+        queue->errors_callback_(HSA_STATUS_ERROR_INVALID_PACKET_FORMAT,
+                                queue->public_handle(), queue->errors_data_);
       return false;
     }
 
@@ -719,8 +733,9 @@ bool HwAqlCommandProcessor::DynamicScratchHandler(hsa_signal_value_t error_code,
     if (scratch.queue_base == NULL) {
       // Out of scratch - promote error and invalidate queue
       queue->Inactivate();
-      queue->errors_callback_(HSA_STATUS_ERROR_OUT_OF_RESOURCES,
-                              queue->public_handle(), queue->errors_data_);
+      if (queue->errors_callback_ != NULL)
+        queue->errors_callback_(HSA_STATUS_ERROR_OUT_OF_RESOURCES,
+                                queue->public_handle(), queue->errors_data_);
       return false;
     }
 
@@ -744,7 +759,8 @@ bool HwAqlCommandProcessor::DynamicScratchHandler(hsa_signal_value_t error_code,
     queue->amd_queue_.scratch_resource_descriptor[1] = srd1.u32All;
 #endif
 
-    // queue->amd_queue_.scratch_backing_memory_location = base;
+    queue->amd_queue_.scratch_backing_memory_location =
+        scratch.queue_process_offset;
     queue->amd_queue_.scratch_backing_memory_byte_size = scratch.size;
     queue->amd_queue_.scratch_workitem_byte_size =
         uint32_t(scratch.size_per_thread);
@@ -757,28 +773,50 @@ bool HwAqlCommandProcessor::DynamicScratchHandler(hsa_signal_value_t error_code,
 
   } else if ((error_code & 2) == 2) {  // Invalid dim
     queue->Inactivate();
-    queue->errors_callback_(HSA_STATUS_ERROR_INCOMPATIBLE_ARGUMENTS,
-                            queue->public_handle(), queue->errors_data_);
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INCOMPATIBLE_ARGUMENTS,
+                              queue->public_handle(), queue->errors_data_);
     return false;
 
   } else if ((error_code & 4) == 4) {  // Invalid group memory
     queue->Inactivate();
-    queue->errors_callback_(HSA_STATUS_ERROR_INVALID_ALLOCATION,
-                            queue->public_handle(), queue->errors_data_);
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_ALLOCATION,
+                              queue->public_handle(), queue->errors_data_);
     return false;
 
   } else if ((error_code & 8) == 8) {  // Invalid (or NULL) code
     queue->Inactivate();
-    queue->errors_callback_(HSA_STATUS_ERROR_INVALID_CODE_OBJECT,
-                            queue->public_handle(), queue->errors_data_);
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_CODE_OBJECT,
+                              queue->public_handle(), queue->errors_data_);
     return false;
 
+  } else if ((error_code & 32) == 32) {  // Invalid format
+    queue->Inactivate();
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_PACKET_FORMAT,
+                              queue->public_handle(), queue->errors_data_);
+    return false;
+  } else if ((error_code & 64) == 64) {  // Group is too large
+    queue->Inactivate();
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_ARGUMENT,
+                              queue->public_handle(), queue->errors_data_);
+    return false;
+  } else if ((error_code & 128) == 128) {  // Out of VGPRs
+    queue->Inactivate();
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR_INVALID_ISA,
+                              queue->public_handle(), queue->errors_data_);
+    return false;
   } else {
     // Undefined code
     queue->Inactivate();
     assert(false && "Undefined queue error code");
-    queue->errors_callback_(HSA_STATUS_ERROR, queue->public_handle(),
-                            queue->errors_data_);
+    if (queue->errors_callback_ != NULL)
+      queue->errors_callback_(HSA_STATUS_ERROR, queue->public_handle(),
+                              queue->errors_data_);
     return false;
   }
 
@@ -786,4 +824,11 @@ bool HwAqlCommandProcessor::DynamicScratchHandler(hsa_signal_value_t error_code,
   return true;
 }
 
+hsa_status_t HwAqlCommandProcessor::SetCUMasking(
+    const uint32_t num_cu_mask_count, const uint32_t* cu_mask) {
+  HSAKMT_STATUS ret = hsaKmtSetQueueCUMask(
+      queue_id_, num_cu_mask_count,
+      reinterpret_cast<HSAuint32*>(const_cast<uint32_t*>(cu_mask)));
+  return (HSAKMT_STATUS_SUCCESS == ret) ? HSA_STATUS_SUCCESS : HSA_STATUS_ERROR;
+}
 }  // namespace amd

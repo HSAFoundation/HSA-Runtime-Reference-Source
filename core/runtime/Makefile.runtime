@@ -1,0 +1,57 @@
+include $(CORE_DEPTH)/make/coredefs
+
+include $(CORE_DEPTH)/make/Makefile.$(CORE_OS_PLATFORM).core
+
+LCXXINCS += -I$(CORE_DEPTH)/commandwriter                                          \
+            -I$(CORE_DEPTH)/commandwriter/include/si                               \
+            -I$(CORE_DEPTH)/../../../inc/asic_reg                                  \
+            -I$(SCLIB_DEPTH)/Interface                                             \
+            -I$(SCLIB_DEPTH)/IL/inc                                                \
+            -I$(HSAIL_TOOLS_DEPTH)/libHSAIL                                        \
+            -I$(HSAIL_TOOLS_DEPTH)/libHSAIL/build/$(CORE_OS_BUILD)/B_$(BUILD_TYPE) \
+            -I$(CORE_DEPTH)/../../../hsathk/include                                \
+            -I$(CORE_DEPTH)/../common                                              \
+            -I$(CORE_DEPTH)/../inc                                                 \
+            -I$(CORE_DEPTH)/../                                                    \
+            -I$(CORE_DEPTH)/finalizer                                              \
+            -I$(CORE_DEPTH)/common                                                 \
+            -I$(CORE_DEPTH)/../../contrib/elftoolchain/common \
+            -I$(CORE_DEPTH)/../../contrib/elftoolchain/libelf \
+
+ifeq ($(CORE_OS_PLATFORM),win)
+  LCXXINCS += -I$(CORE_DEPTH)/../../contrib/elftoolchain/common/win32
+endif
+
+
+CPPFILES = hsa.cpp                                    \
+           hsa_ext_amd.cpp                            \
+           runtime.cpp                                \
+           interrupt_signal.cpp                       \
+           memory_database.cpp                        \
+           host_queue.cpp                             \
+           default_signal.cpp                         \
+           amd_hw_aql_command_processor.cpp           \
+           hsa_ext_interface.cpp                      \
+           amd_topology.cpp                           \
+           amd_memory_registration.cpp                \
+           amd_memory_region.cpp                      \
+           amd_gpu_agent.cpp                          \
+           amd_dgpu_agent.cpp                          \
+           amd_cpu_agent.cpp                          \
+           amd_blit_kernel.cpp                        \
+           amd_blit_sdma.cpp                          \
+           amd_sdma_cmdwriter_kv.cpp                  \
+           hsa_api_trace.cpp                          \
+           signal.cpp                                 \
+           compute_capability.cpp                     \
+           isa.cpp                                    \
+           amd_loader_context.cpp                     \
+           amd_load_map.cpp                           \
+
+
+LIB_TARGET = runtime
+
+CORE_SRCDIR = $(CORE_DEPTH)/runtime
+SRCPATH    = $(CORE_SRCDIR)
+
+include $(CORE_DEPTH)/make/corerules

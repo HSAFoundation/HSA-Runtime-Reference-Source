@@ -1,4 +1,4 @@
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 //
 // Copyright 2014 ADVANCED MICRO DEVICES, INC.
 //
@@ -58,6 +58,7 @@
 #include "core/inc/queue.h"
 #include "core/inc/memory_region.h"
 #include "core/util/utils.h"
+#include "core/runtime/compute_capability.hpp"
 
 namespace core {
 typedef void (*HsaEventCallback)(hsa_status_t status, hsa_queue_t* source,
@@ -75,10 +76,11 @@ class Agent : public Checked<0xF6BC25EB17E6F917> {
   // Lightweight RTTI for vendor specific implementations.
   enum DeviceType { kAmdGpuDevice = 0, kAmdCpuDevice = 1, kUnknownDevice = 2 };
 
-  explicit Agent(DeviceType type) : device_type_(uint32_t(type)) {
+  explicit Agent(DeviceType type)
+      : compute_capability_(), device_type_(uint32_t(type)) {
     public_handle_ = Convert(this);
   }
-  explicit Agent(uint32_t type) : device_type_(type) {
+  explicit Agent(uint32_t type) : compute_capability_(), device_type_(type) {
     public_handle_ = Convert(this);
   }
 
@@ -127,6 +129,11 @@ class Agent : public Checked<0xF6BC25EB17E6F917> {
 
   __forceinline hsa_agent_t public_handle() const { return public_handle_; }
 
+  // Get agent's compute capability value
+  __forceinline const ComputeCapability& compute_capability() const {
+    return compute_capability_;
+  }
+
  protected:
   // Intention here is to have a polymorphic update procedure for public_handle_
   // which is callable on any Agent* but only from some class dervied from
@@ -140,6 +147,7 @@ class Agent : public Checked<0xF6BC25EB17E6F917> {
     public_handle_ = handle;
   }
   hsa_agent_t public_handle_;
+  ComputeCapability compute_capability_;
 
  private:
   // Forbid copying and moving of this object

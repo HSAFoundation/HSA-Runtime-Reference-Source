@@ -142,6 +142,11 @@ class HostQueue : public Queue {
                        std::memory_order_release);
   }
 
+  hsa_status_t SetCUMasking(const uint32_t num_cu_mask_count,
+                            const uint32_t* cu_mask) {
+    return HSA_STATUS_ERROR;
+  }
+
   bool active() const { return active_; }
 
   void* operator new(size_t size) {

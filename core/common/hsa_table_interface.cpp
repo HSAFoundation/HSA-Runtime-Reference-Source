@@ -50,6 +50,8 @@ static const ApiTable* HsaApiTable;
 
 void hsa_table_interface_init(const ApiTable* Table) { HsaApiTable = Table; }
 
+const ApiTable* hsa_table_interface_get_table() { return HsaApiTable; }
+
 // Pass through stub functions
 hsa_status_t HSA_API hsa_init() { return HsaApiTable->hsa_init_fn(); }
 

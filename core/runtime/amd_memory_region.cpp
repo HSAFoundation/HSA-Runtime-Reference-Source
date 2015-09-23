@@ -91,16 +91,17 @@ static bool MakeKfdMemoryResident(void* ptr, size_t size) {
 
 static void MakeKfdMemoryUnresident(void* ptr) { hsaKmtUnmapMemoryToGPU(ptr); }
 
-MemoryRegion::MemoryRegion(bool fine_grain, const core::Agent& owner,
+MemoryRegion::MemoryRegion(bool fine_grain, uint32_t node_id,
                            const HsaMemoryProperties& mem_props)
     : core::MemoryRegion(fine_grain),
-      owner_(&owner),
+      node_id_(node_id),
       mem_props_(mem_props),
       max_single_alloc_size_(0),
       virtual_size_(0) {
   virtual_size_ = GetPhysicalSize();
 
   mem_flag_.Value = 0;
+
   if (IsLocalMemory()) {
     mem_flag_.ui32.PageSize = HSA_PAGE_SIZE_4KB;
     mem_flag_.ui32.NoSubstitute = 1;
@@ -124,10 +125,17 @@ MemoryRegion::MemoryRegion(bool fine_grain, const core::Agent& owner,
     mem_flag_.ui32.HostAccess = 1;
     mem_flag_.ui32.CachePolicy = HSA_CACHING_CACHED;
 
-    max_single_alloc_size_ =
-        AlignDown(static_cast<size_t>(GetPhysicalSize()), kPageSize_);
+    if (fine_grain) {
+      max_single_alloc_size_ =
+          AlignDown(static_cast<size_t>(GetPhysicalSize()), kPageSize_);
 
-    virtual_size_ = os::GetUserModeVirtualMemorySize();
+      virtual_size_ = os::GetUserModeVirtualMemorySize();
+    } else {
+      max_single_alloc_size_ =
+          AlignDown(static_cast<size_t>(GetPhysicalSize() / 4), kPageSize_);
+
+      virtual_size_ = GetPhysicalSize();
+    }
   }
 
   assert(GetVirtualSize() != 0);
@@ -142,18 +150,13 @@ hsa_status_t MemoryRegion::Allocate(size_t size, void** address) const {
     return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
 
-  const HSAuint32 node_id =
-      (owner_->device_type() == core::Agent::kAmdGpuDevice)
-          ? static_cast<const amd::GpuAgent*>(owner_)->node_id()
-          : static_cast<const amd::CpuAgent*>(owner_)->node_id();
-
-  *address = amd::AllocateKfdMemory(mem_flag_, node_id, size);
+  *address = amd::AllocateKfdMemory(mem_flag_, node_id_, size);
 
   if (*address != NULL) {
-    if (IsSystem()) {
+    if (fine_grain()) {
       amd::MakeKfdMemoryResident(*address, size);
-    } else if (IsLocalMemory()) {
-      // TODO: remove immediate pinning on local memory when HSA API to
+    } else {
+      // TODO: remove immediate pinning on coarse grain memory when HSA API to
       // explicitly unpin memory is available.
       if (!amd::MakeKfdMemoryResident(*address, size)) {
         amd::FreeKfdMemory(*address, size);
@@ -197,8 +200,10 @@ hsa_status_t MemoryRegion::GetInfo(hsa_region_info_t attribute,
     case HSA_REGION_INFO_GLOBAL_FLAGS:
       switch (mem_props_.HeapType) {
         case HSA_HEAPTYPE_SYSTEM:
-          *((uint32_t*)value) = (HSA_REGION_GLOBAL_FLAG_KERNARG |
-                                 HSA_REGION_GLOBAL_FLAG_FINE_GRAINED);
+          *((uint32_t*)value) =
+              (HSA_REGION_GLOBAL_FLAG_KERNARG |
+               ((fine_grain()) ? HSA_REGION_GLOBAL_FLAG_FINE_GRAINED
+                               : HSA_REGION_GLOBAL_FLAG_COARSE_GRAINED));
           break;
         case HSA_HEAPTYPE_FRAME_BUFFER_PRIVATE:
         case HSA_HEAPTYPE_FRAME_BUFFER_PUBLIC:
@@ -301,21 +306,19 @@ hsa_status_t MemoryRegion::AssignAgent(void* ptr, size_t size,
     return HSA_STATUS_ERROR_INVALID_AGENT;
   }
 
-  if (IsLocalMemory()) {
-    HSAuint64 u_ptr = reinterpret_cast<HSAuint64>(ptr);
-    if (u_ptr >= GetBaseAddress() &&
-        u_ptr < (GetBaseAddress() + GetVirtualSize())) {
-      // TODO: only support agent allocation buffer.
+  HSAuint64 u_ptr = reinterpret_cast<HSAuint64>(ptr);
+  if (u_ptr >= GetBaseAddress() &&
+      u_ptr < (GetBaseAddress() + GetVirtualSize())) {
+    // TODO: only support agent allocation buffer.
 
-      // TODO: commented until API to explicitly unpin memory is available.
-      // if (!MakeKfdMemoryResident(ptr, size)) {
-      //  return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
-      //}
+    // TODO: commented until API to explicitly unpin memory is available.
+    // if (!MakeKfdMemoryResident(ptr, size)) {
+    //  return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+    //}
 
-      return HSA_STATUS_SUCCESS;
-    } else {
-      return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
-    }
+    return HSA_STATUS_SUCCESS;
+  } else {
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
 
   return HSA_STATUS_SUCCESS;

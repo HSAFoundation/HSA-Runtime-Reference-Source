@@ -62,6 +62,9 @@
 #include "core/util/locks.h"
 #include "core/util/os.h"
 
+#include "core/inc/amd_loader_context.hpp"
+#include "amd_hsa_code.hpp"
+
 //---------------------------------------------------------------------------//
 //    Constants                                                              //
 //---------------------------------------------------------------------------//
@@ -109,6 +112,10 @@ class Runtime {
 
   uint32_t GetQueueId();
 
+  amd::LoaderContext* loader_context();
+
+  amd::hsa::code::AmdHsaCodeManager* code_manager();
+
   /// @brief Memory registration - tracks and provides page aligned regions to
   /// drivers
   bool Register(void* ptr, size_t length, bool registerWithDrivers = true);
@@ -116,7 +123,7 @@ class Runtime {
   /// @brief Remove memory range from the registration list.
   bool Deregister(void* ptr);
 
-  /// @brief Allocate memory on a particular reigon.
+  /// @brief Allocate memory on a particular region.
   hsa_status_t AllocateMemory(const MemoryRegion* region, size_t size,
                               void** address);
 
@@ -139,7 +146,17 @@ class Runtime {
                                      hsa_signal_value_t value,
                                      hsa_amd_signal_handler handler, void* arg);
 
- private:
+  hsa_region_t system_region() { return system_region_; }
+
+  std::function<void*(size_t, size_t)>& system_allocator() {
+    return system_allocator_;
+  }
+
+  std::function<void(void*)>& system_deallocator() {
+    return system_deallocator_;
+  }
+
+ protected:
   Runtime();
 
   Runtime(const Runtime&);
@@ -180,7 +197,16 @@ class Runtime {
   // Region list containing all physical memory region in the platform.
   std::vector<MemoryRegion*> regions_;
 
+  // Shared system memory region
+  hsa_region_t system_region_;
+
   uint32_t queue_count_;
+
+  // Loader context.
+  amd::LoaderContext loader_context_;
+
+  // Code object manager.
+  amd::hsa::code::AmdHsaCodeManager code_manager_;
 
   uintptr_t system_memory_limit_;
 
@@ -189,6 +215,12 @@ class Runtime {
 
   // Contains the region, address, and size of previously allocated memory.
   std::map<const void*, AllocationRegion> allocation_map_;
+
+  // Allocator using ::system_region_
+  std::function<void*(size_t, size_t)> system_allocator_;
+
+  // Deallocator using ::system_region_
+  std::function<void(void*)> system_deallocator_;
 
   uint64_t sys_clock_freq_;
 
@@ -253,6 +285,8 @@ class Runtime {
   // common (example: calls library routines at process exit).
   friend class RuntimeCleanup;
 
+  void LoadExtensions();
+  void UnloadExtensions();
   void LoadTools();
   void UnloadTools();
   void CloseTools();

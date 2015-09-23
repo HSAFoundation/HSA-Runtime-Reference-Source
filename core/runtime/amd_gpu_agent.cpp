@@ -62,109 +62,29 @@
 #define DEFAULT_SCRATCH_BYTES_PER_THREAD 2048
 
 namespace amd {
-void ReleaseApe1(void* addr, size_t size) {
-  assert(addr != NULL && size != 0);
-  _aligned_free(addr);
-}
-
-HsaMemoryProperties ReserveApe1(HSAuint32 node_id, size_t size,
-                                size_t alignment) {
-  // Only valid in 64 bit.
-  assert(sizeof(void*) == 8);
-
-  HsaMemoryProperties ape1_prop;
-
-  void* ape1 = _aligned_malloc(size, alignment);
-  assert((ape1 != NULL) && ("APE1 allocation failed"));
-
-  if (HSAKMT_STATUS_SUCCESS !=
-      hsaKmtSetMemoryPolicy(node_id, HSA_CACHING_CACHED, HSA_CACHING_NONCACHED,
-                            ape1, size)) {
-    ReleaseApe1(ape1, size);
-    std::memset(&ape1_prop, 0, sizeof(ape1_prop));
-    assert(false && "hsaKmtSetMemoryPolicy failed");
-    return ape1_prop;
-  }
-
-  std::memset(&ape1_prop, 0, sizeof(ape1_prop));
-  ape1_prop.HeapType = HSA_HEAPTYPE_SYSTEM;
-  ape1_prop.SizeInBytes = size;
-  ape1_prop.VirtualBaseAddress = reinterpret_cast<HSAuint64>(ape1);
-
-  return ape1_prop;
-}
-
 GpuAgent::GpuAgent(HSAuint32 node, const HsaNodeProperties& node_props,
                    const std::vector<HsaCacheProperties>& cache_props)
     : node_id_(node),
       properties_(node_props),
+      current_coherency_type_(HSA_AMD_COHERENCY_TYPE_COHERENT),
+      blit_(NULL),
       cache_props_(cache_props),
       ape1_base_(0),
-      ape1_size_(0),
-      current_coherency_type_(HSA_AMD_COHERENCY_TYPE_COHERENT),
-      blit_(NULL) {
+      ape1_size_(0) {
   HSAKMT_STATUS err = hsaKmtGetClockCounters(node_id_, &t0_);
   t1_ = t0_;
   assert(err == HSAKMT_STATUS_SUCCESS && "hsaGetClockCounters error");
 
-  HsaMemFlags flags;
-  flags.Value = 0;
-  flags.ui32.Scratch = 1;
-  flags.ui32.HostAccess = 1;
-
-  scratch_per_thread_ = atoi(os::GetEnvVar("HSA_SCRATCH_MEM").c_str());
-  if (scratch_per_thread_ == 0)
-    scratch_per_thread_ = DEFAULT_SCRATCH_BYTES_PER_THREAD;
-
-  int queues = atoi(os::GetEnvVar("HSA_MAX_QUEUES").c_str());
-#if !defined(HSA_LARGE_MODEL) || !defined(__linux__)
-  if (queues == 0) queues = 10;
-#endif
-
-  // Scratch length is: waves/CU * threads/wave * queues * #CUs *
-  // scratch/thread
-  queue_scratch_len_ = 0;
-  queue_scratch_len_ = AlignUp(32 * 64 * 8 * scratch_per_thread_, 65536);
-  size_t scratchLen = queue_scratch_len_ * queues;
-
-// For 64-bit linux use max queues unless otherwise specified
-#if defined(HSA_LARGE_MODEL) && defined(__linux__)
-  if ((scratchLen == 0) || (scratchLen > 4294967296))
-    scratchLen = 4294967296;  // 4GB apeture max
-#endif
-
-  void* scratchBase;
-  err = hsaKmtAllocMemory(node_id_, scratchLen, flags, &scratchBase);
-  assert(err == HSAKMT_STATUS_SUCCESS && "hsaKmtAllocMemory(Scratch) failed");
-  assert(IsMultipleOf(scratchBase, 0x1000) &&
-         "Scratch base is not page aligned!");
-
-  scratch_pool_. ~SmallHeap();
-  new (&scratch_pool_) SmallHeap(scratchBase, scratchLen);
-
-  if (sizeof(void*) == 8) {
-    // 64 bit only. Setup APE1 memory region, which contains
-    // non coherent memory.
-
-    static const size_t kApe1Alignment = 64 * 1024;
-    static const size_t kApe1Size = kApe1Alignment;
-
-    const HsaMemoryProperties ape1_prop =
-        ReserveApe1(node_id_, kApe1Size, kApe1Alignment);
-
-    if (ape1_prop.SizeInBytes > 0) {
-      SetApe1BaseAndSize((uintptr_t)ape1_prop.VirtualBaseAddress,
-                         (size_t)ape1_prop.SizeInBytes);
-    }
-  }
+  // Set compute_capability_ via node property, only on GPU device.
+  compute_capability_.Initialize(node_props.EngineId.ui32.Major,
+                                 node_props.EngineId.ui32.Minor,
+                                 node_props.EngineId.ui32.Stepping);
 }
 
 GpuAgent::~GpuAgent() {
   if (ape1_base_ != 0) {
-    ReleaseApe1(reinterpret_cast<void*>(ape1_base_), ape1_size_);
+    _aligned_free(reinterpret_cast<void*>(ape1_base_));
   }
-
-  regions_.clear();
 
   if (scratch_pool_.base() != NULL) {
     hsaKmtFreeMemory(scratch_pool_.base(), scratch_pool_.size());
@@ -176,6 +96,8 @@ GpuAgent::~GpuAgent() {
 
     delete blit_;
   }
+
+  regions_.clear();
 }
 
 void GpuAgent::RegisterMemoryProperties(core::MemoryRegion& region) {
@@ -185,6 +107,44 @@ void GpuAgent::RegisterMemoryProperties(core::MemoryRegion& region) {
          ("Memory region should only be global, group or scratch"));
 
   regions_.push_back(amd_region);
+
+  if (amd_region->IsScratch()) {
+    HsaMemFlags flags;
+    flags.Value = 0;
+    flags.ui32.Scratch = 1;
+    flags.ui32.HostAccess = 1;
+
+    scratch_per_thread_ = atoi(os::GetEnvVar("HSA_SCRATCH_MEM").c_str());
+    if (scratch_per_thread_ == 0)
+      scratch_per_thread_ = DEFAULT_SCRATCH_BYTES_PER_THREAD;
+
+    int queues = atoi(os::GetEnvVar("HSA_MAX_QUEUES").c_str());
+#if !defined(HSA_LARGE_MODEL) || !defined(__linux__)
+    if (queues == 0) queues = 10;
+#endif
+
+    // Scratch length is: waves/CU * threads/wave * queues * #CUs *
+    // scratch/thread
+    queue_scratch_len_ = 0;
+    queue_scratch_len_ = AlignUp(32 * 64 * 8 * scratch_per_thread_, 65536);
+    size_t scratchLen = queue_scratch_len_ * queues;
+
+#if defined(HSA_LARGE_MODEL) && defined(__linux__)
+    // For 64-bit linux use max queues unless otherwise specified
+    if ((scratchLen == 0) || (scratchLen > 4294967296))
+      scratchLen = 4294967296;  // 4GB apeture max
+#endif
+
+    void* scratchBase;
+    HSAKMT_STATUS err =
+        hsaKmtAllocMemory(node_id_, scratchLen, flags, &scratchBase);
+    assert(err == HSAKMT_STATUS_SUCCESS && "hsaKmtAllocMemory(Scratch) failed");
+    assert(IsMultipleOf(scratchBase, 0x1000) &&
+           "Scratch base is not page aligned!");
+
+    scratch_pool_.~SmallHeap();
+    new (&scratch_pool_) SmallHeap(scratchBase, scratchLen);
+  }
 }
 
 hsa_status_t GpuAgent::IterateRegion(
@@ -270,12 +230,12 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
       break;
     case HSA_AGENT_INFO_WORKGROUP_MAX_DIM: {
       // TODO: must be per-device
-      const uint16_t group_size[3] = {2048, 2048, 2048};
+      const uint16_t group_size[3] = {1024, 1024, 1024};
       std::memcpy(value, group_size, sizeof(group_size));
     } break;
     case HSA_AGENT_INFO_WORKGROUP_MAX_SIZE:
       // TODO: must be per-device
-      *((uint32_t*)value) = 2048;
+      *((uint32_t*)value) = 1024;
       break;
     case HSA_AGENT_INFO_GRID_MAX_DIM: {
       const hsa_dim3_t grid_size = {UINT32_MAX, UINT32_MAX, UINT32_MAX};
@@ -456,19 +416,24 @@ void GpuAgent::TranslateTime(core::Signal* signal,
 
 bool GpuAgent::current_coherency_type(hsa_amd_coherency_type_t type) {
   ScopedAcquire<KernelMutex> Lock(&lock_);
-  if (type == current_coherency_type_) {
+
+  if (ape1_base_ == 0 && ape1_size_ == 0) {
+    static const size_t kApe1Alignment = 64 * 1024;
+    ape1_size_ = kApe1Alignment;
+    ape1_base_ = reinterpret_cast<uintptr_t>(
+        _aligned_malloc(ape1_size_, kApe1Alignment));
+    assert((ape1_base_ != 0) && ("APE1 allocation failed"));
+  } else if (type == current_coherency_type_) {
     return true;
   }
 
   HSA_CACHING_TYPE type0, type1;
-  if (current_coherency_type_ == HSA_AMD_COHERENCY_TYPE_COHERENT) {
-    type0 = HSA_CACHING_NONCACHED;
-    type1 = HSA_CACHING_CACHED;
-    type = HSA_AMD_COHERENCY_TYPE_NONCOHERENT;
-  } else {
+  if (type == HSA_AMD_COHERENCY_TYPE_COHERENT) {
     type0 = HSA_CACHING_CACHED;
     type1 = HSA_CACHING_NONCACHED;
-    type = HSA_AMD_COHERENCY_TYPE_COHERENT;
+  } else {
+    type0 = HSA_CACHING_NONCACHED;
+    type1 = HSA_CACHING_CACHED;
   }
 
   if (hsaKmtSetMemoryPolicy(node_id_, type0, type1,
@@ -481,7 +446,7 @@ bool GpuAgent::current_coherency_type(hsa_amd_coherency_type_t type) {
 }
 
 uint16_t GpuAgent::GetMicrocodeVersion() const {
-  return uint16_t(properties_.EngineId & 0xFFFF);
+  return (properties_.EngineId.ui32.uCode);
 }
 
 void GpuAgent::SyncClocks() {

@@ -1,0 +1,13 @@
+include $(CORE_DEPTH)/make/coredefs
+
+include $(CORE_DEPTH)/make/Makefile.$(CORE_OS_PLATFORM).core
+
+CPPFILES += small_heap.cpp\
+            timer.cpp
+
+LIB_TARGET = util
+
+CORE_SRCDIR = $(CORE_DEPTH)/util
+SRCPATH    = $(CORE_SRCDIR)
+
+include $(CORE_DEPTH)/make/corerules

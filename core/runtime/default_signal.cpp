@@ -51,14 +51,14 @@ namespace core {
 
 DefaultSignal::DefaultSignal(hsa_signal_value_t initial_value)
     : Signal(initial_value) {
-  signal_.type = kHsaSignalAmd;
+  signal_.kind = AMD_SIGNAL_KIND_USER;
   signal_.event_mailbox_ptr = NULL;
   HSA::hsa_memory_register(this, sizeof(DefaultSignal));
 }
 
 DefaultSignal::~DefaultSignal() {
   invalid_ = true;
-  while (waiting_ != 0)
+  while (InUse())
     ;
   HSA::hsa_memory_deregister(this, sizeof(DefaultSignal));
 }

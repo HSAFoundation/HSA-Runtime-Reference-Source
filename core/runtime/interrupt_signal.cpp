@@ -84,14 +84,14 @@ InterruptSignal::InterruptSignal(hsa_signal_value_t initial_value,
     signal_.event_id = 0;
     signal_.event_mailbox_ptr = 0;
   }
-  signal_.type = kHsaSignalAmd;
+  signal_.kind = AMD_SIGNAL_KIND_USER;
   HSA::hsa_memory_register(this, sizeof(InterruptSignal));
 }
 
 InterruptSignal::~InterruptSignal() {
   invalid_ = true;
   hsaKmtSetEvent(event_);
-  while (waiting_ != 0)
+  while (InUse())
     ;
   if (free_event_) hsaKmtDestroyEvent(event_);
   HSA::hsa_memory_deregister(this, sizeof(InterruptSignal));

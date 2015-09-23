@@ -57,8 +57,11 @@
 #include "core/inc/signal.h"
 #include "core/inc/default_signal.h"
 #include "core/inc/interrupt_signal.h"
-#include "core/loader/executable.hpp"
+#include "core/inc/amd_load_map.h"
+#include "core/inc/amd_loader_context.hpp"
 #include "core/runtime/isa.hpp"
+
+using namespace amd::hsa::code;
 
 template <class T>
 struct ValidityError;
@@ -143,12 +146,12 @@ namespace HSA {
 //---------------------------------------------------------------------------//
 //  Init/Shutdown routines
 //---------------------------------------------------------------------------//
-hsa_status_t HSA_API hsa_init() {
+hsa_status_t hsa_init() {
   if (core::Runtime::runtime_singleton_->Acquire()) return HSA_STATUS_SUCCESS;
   return HSA_STATUS_ERROR_REFCOUNT_OVERFLOW;
 }
 
-hsa_status_t HSA_API hsa_shut_down() {
+hsa_status_t hsa_shut_down() {
   IS_OPEN();
   if (core::Runtime::runtime_singleton_->Release()) return HSA_STATUS_SUCCESS;
   return HSA_STATUS_ERROR_NOT_INITIALIZED;
@@ -157,19 +160,20 @@ hsa_status_t HSA_API hsa_shut_down() {
 //---------------------------------------------------------------------------//
 //  System
 //---------------------------------------------------------------------------//
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_system_get_info(hsa_system_info_t attribute, void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
   return core::Runtime::runtime_singleton_->GetSystemInfo(attribute, value);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_system_extension_supported(uint16_t extension, uint16_t version_major,
                                    uint16_t version_minor, bool* result) {
   IS_OPEN();
 
-  if ((extension > HSA_EXTENSION_AMD_PROFILER) || (result == NULL)) {
+  if ((extension > HSA_EXTENSION_AMD_PROFILER &&
+         extension != AMD_EXTENSION_LOAD_MAP) || result == NULL) {
     return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
 
@@ -194,7 +198,7 @@ hsa_status_t HSA_API
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_system_get_extension_table(uint16_t extension, uint16_t version_major,
                                    uint16_t version_minor, void* table) {
   if (table == NULL) {
@@ -244,6 +248,16 @@ hsa_status_t HSA_API
           hsa_ext_program_iterate_modules;
 
       return HSA_STATUS_SUCCESS;
+    } else if (extension == AMD_EXTENSION_LOAD_MAP) {
+      // Currently there is only version 1.00.
+      amd_load_map_1_00_pfn_t* amd_table =
+          reinterpret_cast<amd_load_map_1_00_pfn_t*>(table);
+      amd_table->amd_executable_load_code_object = amd_executable_load_code_object;
+      amd_table->amd_iterate_executables = amd_iterate_executables;
+      amd_table->amd_executable_iterate_loaded_code_objects = amd_executable_iterate_loaded_code_objects;
+      amd_table->amd_loaded_code_object_get_info = amd_loaded_code_object_get_info;
+      amd_table->amd_loaded_code_object_iterate_loaded_segments = amd_loaded_code_object_iterate_loaded_segments;
+      amd_table->amd_loaded_segment_get_info = amd_loaded_segment_get_info;
     } else {
       // TODO: other extensions are not yet implemented.
       return HSA_STATUS_ERROR;
@@ -256,7 +270,7 @@ hsa_status_t HSA_API
 //---------------------------------------------------------------------------//
 //  Agent
 //---------------------------------------------------------------------------//
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_iterate_agents(hsa_status_t (*callback)(hsa_agent_t agent, void* data),
                        void* data) {
   IS_OPEN();
@@ -264,7 +278,7 @@ hsa_status_t HSA_API
   return core::Runtime::runtime_singleton_->IterateAgent(callback, data);
 }
 
-hsa_status_t HSA_API hsa_agent_get_info(hsa_agent_t agent_handle,
+hsa_status_t hsa_agent_get_info(hsa_agent_t agent_handle,
                                         hsa_agent_info_t attribute,
                                         void* value) {
   IS_OPEN();
@@ -274,7 +288,7 @@ hsa_status_t HSA_API hsa_agent_get_info(hsa_agent_t agent_handle,
   return agent->GetInfo(attribute, value);
 }
 
-hsa_status_t HSA_API hsa_agent_get_exception_policies(hsa_agent_t agent_handle,
+hsa_status_t hsa_agent_get_exception_policies(hsa_agent_t agent_handle,
                                                       hsa_profile_t profile,
                                                       uint16_t* mask) {
   IS_OPEN();
@@ -288,7 +302,7 @@ hsa_status_t HSA_API hsa_agent_get_exception_policies(hsa_agent_t agent_handle,
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_agent_extension_supported(uint16_t extension, hsa_agent_t agent_handle,
                                   uint16_t version_major,
                                   uint16_t version_minor, bool* result) {
@@ -341,7 +355,7 @@ hsa_status_t HSA_API
 /// queue being created
 ///
 /// @return hsa_status
-hsa_status_t HSA_API hsa_queue_create(
+hsa_status_t hsa_queue_create(
     hsa_agent_t agent_handle, uint32_t size, hsa_queue_type_t type,
     void (*callback)(hsa_status_t status, hsa_queue_t* source, void* data),
     void* data, uint32_t private_segment_size, uint32_t group_segment_size,
@@ -379,7 +393,7 @@ hsa_status_t HSA_API hsa_queue_create(
   return status;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_soft_queue_create(hsa_region_t region, uint32_t size,
                           hsa_queue_type_t type, uint32_t features,
                           hsa_signal_t doorbell_signal, hsa_queue_t** queue) {
@@ -416,7 +430,7 @@ hsa_status_t HSA_API
 /// @param queue Pointer to the queue being destroyed
 ///
 /// @return hsa_status
-hsa_status_t HSA_API hsa_queue_destroy(hsa_queue_t* queue) {
+hsa_status_t hsa_queue_destroy(hsa_queue_t* queue) {
   IS_OPEN();
   IS_BAD_PTR(queue);
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -430,7 +444,7 @@ hsa_status_t HSA_API hsa_queue_destroy(hsa_queue_t* queue) {
 /// @param queue Pointer to the queue being inactivated
 ///
 /// @return hsa_status
-hsa_status_t HSA_API hsa_queue_inactivate(hsa_queue_t* queue) {
+hsa_status_t hsa_queue_inactivate(hsa_queue_t* queue) {
   IS_OPEN();
   IS_BAD_PTR(queue);
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -444,7 +458,7 @@ hsa_status_t HSA_API hsa_queue_inactivate(hsa_queue_t* queue) {
 /// @param queue Pointer to the queue whose read index is being read
 ///
 /// @return uint64_t Value of Read index
-uint64_t HSA_API hsa_queue_load_read_index_acquire(const hsa_queue_t* queue) {
+uint64_t hsa_queue_load_read_index_acquire(const hsa_queue_t* queue) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
   return cmd_queue->LoadReadIndexAcquire();
@@ -455,7 +469,7 @@ uint64_t HSA_API hsa_queue_load_read_index_acquire(const hsa_queue_t* queue) {
 /// @param queue Pointer to the queue whose read index is being read
 ///
 /// @return uint64_t Value of Read index
-uint64_t HSA_API hsa_queue_load_read_index_relaxed(const hsa_queue_t* queue) {
+uint64_t hsa_queue_load_read_index_relaxed(const hsa_queue_t* queue) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
   return cmd_queue->LoadReadIndexRelaxed();
@@ -466,7 +480,7 @@ uint64_t HSA_API hsa_queue_load_read_index_relaxed(const hsa_queue_t* queue) {
 /// @param queue Pointer to the queue whose write index is being read
 ///
 /// @return uint64_t Value of Write index
-uint64_t HSA_API hsa_queue_load_write_index_acquire(const hsa_queue_t* queue) {
+uint64_t hsa_queue_load_write_index_acquire(const hsa_queue_t* queue) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
   return cmd_queue->LoadWriteIndexAcquire();
@@ -477,7 +491,7 @@ uint64_t HSA_API hsa_queue_load_write_index_acquire(const hsa_queue_t* queue) {
 /// @param queue Pointer to the queue whose write index is being read
 ///
 /// @return uint64_t Value of Write index
-uint64_t HSA_API hsa_queue_load_write_index_relaxed(const hsa_queue_t* queue) {
+uint64_t hsa_queue_load_write_index_relaxed(const hsa_queue_t* queue) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
   return cmd_queue->LoadWriteIndexAcquire();
@@ -488,7 +502,7 @@ uint64_t HSA_API hsa_queue_load_write_index_relaxed(const hsa_queue_t* queue) {
 /// @param queue Pointer to the queue whose read index is being updated
 ///
 /// @param value Value of new read index
-void HSA_API hsa_queue_store_read_index_relaxed(const hsa_queue_t* queue,
+void hsa_queue_store_read_index_relaxed(const hsa_queue_t* queue,
                                                 uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -500,7 +514,7 @@ void HSA_API hsa_queue_store_read_index_relaxed(const hsa_queue_t* queue,
 /// @param queue Pointer to the queue whose read index is being updated
 ///
 /// @param value Value of new read index
-void HSA_API hsa_queue_store_read_index_release(const hsa_queue_t* queue,
+void hsa_queue_store_read_index_release(const hsa_queue_t* queue,
                                                 uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -512,7 +526,7 @@ void HSA_API hsa_queue_store_read_index_release(const hsa_queue_t* queue,
 /// @param queue Pointer to the queue whose write index is being updated
 ///
 /// @param value Value of new write index
-void HSA_API hsa_queue_store_write_index_relaxed(const hsa_queue_t* queue,
+void hsa_queue_store_write_index_relaxed(const hsa_queue_t* queue,
                                                  uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -524,7 +538,7 @@ void HSA_API hsa_queue_store_write_index_relaxed(const hsa_queue_t* queue,
 /// @param queue Pointer to the queue whose write index is being updated
 ///
 /// @param value Value of new write index
-void HSA_API hsa_queue_store_write_index_release(const hsa_queue_t* queue,
+void hsa_queue_store_write_index_release(const hsa_queue_t* queue,
                                                  uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -541,7 +555,7 @@ void HSA_API hsa_queue_store_write_index_release(const hsa_queue_t* queue,
 /// @param value Value of new write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_cas_write_index_acq_rel(const hsa_queue_t* queue,
+uint64_t hsa_queue_cas_write_index_acq_rel(const hsa_queue_t* queue,
                                                    uint64_t expected,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -559,7 +573,7 @@ uint64_t HSA_API hsa_queue_cas_write_index_acq_rel(const hsa_queue_t* queue,
 /// @param value Value of new write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_cas_write_index_acquire(const hsa_queue_t* queue,
+uint64_t hsa_queue_cas_write_index_acquire(const hsa_queue_t* queue,
                                                    uint64_t expected,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -577,7 +591,7 @@ uint64_t HSA_API hsa_queue_cas_write_index_acquire(const hsa_queue_t* queue,
 /// @param value Value of new write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_cas_write_index_relaxed(const hsa_queue_t* queue,
+uint64_t hsa_queue_cas_write_index_relaxed(const hsa_queue_t* queue,
                                                    uint64_t expected,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -595,7 +609,7 @@ uint64_t HSA_API hsa_queue_cas_write_index_relaxed(const hsa_queue_t* queue,
 /// @param value Value of new write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_cas_write_index_release(const hsa_queue_t* queue,
+uint64_t hsa_queue_cas_write_index_release(const hsa_queue_t* queue,
                                                    uint64_t expected,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
@@ -611,7 +625,7 @@ uint64_t HSA_API hsa_queue_cas_write_index_release(const hsa_queue_t* queue,
 /// @param value Value to add to write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_add_write_index_acq_rel(const hsa_queue_t* queue,
+uint64_t hsa_queue_add_write_index_acq_rel(const hsa_queue_t* queue,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -625,7 +639,7 @@ uint64_t HSA_API hsa_queue_add_write_index_acq_rel(const hsa_queue_t* queue,
 /// @param value Value to add to write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_add_write_index_acquire(const hsa_queue_t* queue,
+uint64_t hsa_queue_add_write_index_acquire(const hsa_queue_t* queue,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -639,7 +653,7 @@ uint64_t HSA_API hsa_queue_add_write_index_acquire(const hsa_queue_t* queue,
 /// @param value Value to add to write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_add_write_index_relaxed(const hsa_queue_t* queue,
+uint64_t hsa_queue_add_write_index_relaxed(const hsa_queue_t* queue,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -653,7 +667,7 @@ uint64_t HSA_API hsa_queue_add_write_index_relaxed(const hsa_queue_t* queue,
 /// @param value Value to add to write index
 ///
 /// @return uint64_t Value of write index before the update
-uint64_t HSA_API hsa_queue_add_write_index_release(const hsa_queue_t* queue,
+uint64_t hsa_queue_add_write_index_release(const hsa_queue_t* queue,
                                                    uint64_t value) {
   core::Queue* cmd_queue = core::Queue::Convert(queue);
   assert(IsValid(cmd_queue));
@@ -663,7 +677,7 @@ uint64_t HSA_API hsa_queue_add_write_index_release(const hsa_queue_t* queue,
 //-----------------------------------------------------------------------------
 // Memory
 //-----------------------------------------------------------------------------
-hsa_status_t HSA_API hsa_agent_iterate_regions(
+hsa_status_t hsa_agent_iterate_regions(
     hsa_agent_t agent_handle,
     hsa_status_t (*callback)(hsa_region_t region, void* data), void* data) {
   IS_OPEN();
@@ -673,7 +687,7 @@ hsa_status_t HSA_API hsa_agent_iterate_regions(
   return agent->IterateRegion(callback, data);
 }
 
-hsa_status_t HSA_API hsa_region_get_info(hsa_region_t region,
+hsa_status_t hsa_region_get_info(hsa_region_t region,
                                          hsa_region_info_t attribute,
                                          void* value) {
   IS_OPEN();
@@ -685,7 +699,7 @@ hsa_status_t HSA_API hsa_region_get_info(hsa_region_t region,
   return mem_region->GetInfo(attribute, value);
 }
 
-hsa_status_t HSA_API hsa_memory_register(void* address, size_t size) {
+hsa_status_t hsa_memory_register(void* address, size_t size) {
   IS_OPEN();
 
   if (size == 0 && address != NULL) {
@@ -699,7 +713,7 @@ hsa_status_t HSA_API hsa_memory_register(void* address, size_t size) {
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_memory_deregister(void* address, size_t size) {
+hsa_status_t hsa_memory_deregister(void* address, size_t size) {
   IS_OPEN();
 
 #ifndef __linux__
@@ -710,7 +724,7 @@ hsa_status_t HSA_API hsa_memory_deregister(void* address, size_t size) {
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_memory_allocate(hsa_region_t region, size_t size, void** ptr) {
   IS_OPEN();
 
@@ -725,7 +739,7 @@ hsa_status_t HSA_API
                                                            ptr);
 }
 
-hsa_status_t HSA_API hsa_memory_free(void* ptr) {
+hsa_status_t hsa_memory_free(void* ptr) {
   IS_OPEN();
 
   if (ptr == NULL) {
@@ -735,7 +749,7 @@ hsa_status_t HSA_API hsa_memory_free(void* ptr) {
   return core::Runtime::runtime_singleton_->FreeMemory(ptr);
 }
 
-hsa_status_t HSA_API hsa_memory_assign_agent(void* ptr,
+hsa_status_t hsa_memory_assign_agent(void* ptr,
                                              hsa_agent_t agent_handle,
                                              hsa_access_permission_t access) {
   IS_OPEN();
@@ -752,7 +766,7 @@ hsa_status_t HSA_API hsa_memory_assign_agent(void* ptr,
                                                                 access);
 }
 
-hsa_status_t HSA_API hsa_memory_copy(void* dst, const void* src, size_t size) {
+hsa_status_t hsa_memory_copy(void* dst, const void* src, size_t size) {
   IS_OPEN();
 
   if (dst == NULL || src == NULL) {
@@ -776,7 +790,7 @@ typedef struct {
   }
 } AgentHandleCompare;
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_signal_create(hsa_signal_value_t initial_value, uint32_t num_consumers,
                       const hsa_agent_t* consumers, hsa_signal_t* hsa_signal) {
   IS_OPEN();
@@ -806,7 +820,7 @@ hsa_status_t HSA_API
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_signal_destroy(hsa_signal_t hsa_signal) {
+hsa_status_t hsa_signal_destroy(hsa_signal_t hsa_signal) {
   IS_OPEN();
 
   if (hsa_signal.handle == 0) {
@@ -819,33 +833,33 @@ hsa_status_t HSA_API hsa_signal_destroy(hsa_signal_t hsa_signal) {
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_signal_value_t HSA_API hsa_signal_load_relaxed(hsa_signal_t hsa_signal) {
+hsa_signal_value_t hsa_signal_load_relaxed(hsa_signal_t hsa_signal) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   return signal->LoadRelaxed();
 }
 
-hsa_signal_value_t HSA_API hsa_signal_load_acquire(hsa_signal_t hsa_signal) {
+hsa_signal_value_t hsa_signal_load_acquire(hsa_signal_t hsa_signal) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   return signal->LoadAcquire();
 }
 
-void HSA_API hsa_signal_store_relaxed(hsa_signal_t hsa_signal,
+void hsa_signal_store_relaxed(hsa_signal_t hsa_signal,
                                       hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->StoreRelaxed(value);
 }
 
-void HSA_API hsa_signal_store_release(hsa_signal_t hsa_signal,
+void hsa_signal_store_release(hsa_signal_t hsa_signal,
                                       hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->StoreRelease(value);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_wait_relaxed(hsa_signal_t hsa_signal,
                             hsa_signal_condition_t condition,
                             hsa_signal_value_t compare_value,
@@ -857,7 +871,7 @@ hsa_signal_value_t HSA_API
                              wait_state_hint);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_wait_acquire(hsa_signal_t hsa_signal,
                             hsa_signal_condition_t condition,
                             hsa_signal_value_t compare_value,
@@ -869,147 +883,147 @@ hsa_signal_value_t HSA_API
                              wait_state_hint);
 }
 
-void HSA_API
+void 
     hsa_signal_and_relaxed(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AndRelaxed(value);
 }
 
-void HSA_API
+void 
     hsa_signal_and_acquire(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AndAcquire(value);
 }
 
-void HSA_API
+void 
     hsa_signal_and_release(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AndRelease(value);
 }
 
-void HSA_API
+void 
     hsa_signal_and_acq_rel(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AndAcqRel(value);
 }
 
-void HSA_API
+void 
     hsa_signal_or_relaxed(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->OrRelaxed(value);
 }
 
-void HSA_API
+void 
     hsa_signal_or_acquire(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->OrAcquire(value);
 }
 
-void HSA_API
+void 
     hsa_signal_or_release(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->OrRelease(value);
 }
 
-void HSA_API
+void 
     hsa_signal_or_acq_rel(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->OrAcqRel(value);
 }
 
-void HSA_API
+void 
     hsa_signal_xor_relaxed(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->XorRelaxed(value);
 }
 
-void HSA_API
+void 
     hsa_signal_xor_acquire(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->XorAcquire(value);
 }
 
-void HSA_API
+void 
     hsa_signal_xor_release(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->XorRelease(value);
 }
 
-void HSA_API
+void 
     hsa_signal_xor_acq_rel(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->XorAcqRel(value);
 }
 
-void HSA_API
+void 
     hsa_signal_add_relaxed(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   return signal->AddRelaxed(value);
 }
 
-void HSA_API
+void 
     hsa_signal_add_acquire(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AddAcquire(value);
 }
 
-void HSA_API
+void 
     hsa_signal_add_release(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AddRelease(value);
 }
 
-void HSA_API
+void 
     hsa_signal_add_acq_rel(hsa_signal_t hsa_signal, hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->AddAcqRel(value);
 }
 
-void HSA_API hsa_signal_subtract_relaxed(hsa_signal_t hsa_signal,
+void hsa_signal_subtract_relaxed(hsa_signal_t hsa_signal,
                                          hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->SubRelaxed(value);
 }
 
-void HSA_API hsa_signal_subtract_acquire(hsa_signal_t hsa_signal,
+void hsa_signal_subtract_acquire(hsa_signal_t hsa_signal,
                                          hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->SubAcquire(value);
 }
 
-void HSA_API hsa_signal_subtract_release(hsa_signal_t hsa_signal,
+void hsa_signal_subtract_release(hsa_signal_t hsa_signal,
                                          hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->SubRelease(value);
 }
 
-void HSA_API hsa_signal_subtract_acq_rel(hsa_signal_t hsa_signal,
+void hsa_signal_subtract_acq_rel(hsa_signal_t hsa_signal,
                                          hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
   assert(IsValid(signal));
   signal->SubAcqRel(value);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_exchange_relaxed(hsa_signal_t hsa_signal,
                                 hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1017,7 +1031,7 @@ hsa_signal_value_t HSA_API
   return signal->ExchRelaxed(value);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_exchange_acquire(hsa_signal_t hsa_signal,
                                 hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1025,7 +1039,7 @@ hsa_signal_value_t HSA_API
   return signal->ExchAcquire(value);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_exchange_release(hsa_signal_t hsa_signal,
                                 hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1033,7 +1047,7 @@ hsa_signal_value_t HSA_API
   return signal->ExchRelease(value);
 }
 
-hsa_signal_value_t HSA_API
+hsa_signal_value_t 
     hsa_signal_exchange_acq_rel(hsa_signal_t hsa_signal,
                                 hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1041,7 +1055,7 @@ hsa_signal_value_t HSA_API
   return signal->ExchAcqRel(value);
 }
 
-hsa_signal_value_t HSA_API hsa_signal_cas_relaxed(hsa_signal_t hsa_signal,
+hsa_signal_value_t hsa_signal_cas_relaxed(hsa_signal_t hsa_signal,
                                                   hsa_signal_value_t expected,
                                                   hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1049,7 +1063,7 @@ hsa_signal_value_t HSA_API hsa_signal_cas_relaxed(hsa_signal_t hsa_signal,
   return signal->CasRelaxed(expected, value);
 }
 
-hsa_signal_value_t HSA_API hsa_signal_cas_acquire(hsa_signal_t hsa_signal,
+hsa_signal_value_t hsa_signal_cas_acquire(hsa_signal_t hsa_signal,
                                                   hsa_signal_value_t expected,
                                                   hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1057,7 +1071,7 @@ hsa_signal_value_t HSA_API hsa_signal_cas_acquire(hsa_signal_t hsa_signal,
   return signal->CasAcquire(expected, value);
 }
 
-hsa_signal_value_t HSA_API hsa_signal_cas_release(hsa_signal_t hsa_signal,
+hsa_signal_value_t hsa_signal_cas_release(hsa_signal_t hsa_signal,
                                                   hsa_signal_value_t expected,
                                                   hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1065,7 +1079,7 @@ hsa_signal_value_t HSA_API hsa_signal_cas_release(hsa_signal_t hsa_signal,
   return signal->CasRelease(expected, value);
 }
 
-hsa_signal_value_t HSA_API hsa_signal_cas_acq_rel(hsa_signal_t hsa_signal,
+hsa_signal_value_t hsa_signal_cas_acq_rel(hsa_signal_t hsa_signal,
                                                   hsa_signal_value_t expected,
                                                   hsa_signal_value_t value) {
   core::Signal* signal = core::Signal::Convert(hsa_signal);
@@ -1077,7 +1091,7 @@ hsa_signal_value_t HSA_API hsa_signal_cas_acq_rel(hsa_signal_t hsa_signal,
 // Isa
 //-----------------------------------------------------------------------------
 
-hsa_status_t HSA_API hsa_isa_from_name(const char* name, hsa_isa_t* isa) {
+hsa_status_t hsa_isa_from_name(const char* name, hsa_isa_t* isa) {
   IS_OPEN();
   IS_BAD_PTR(name);
   IS_BAD_PTR(isa);
@@ -1085,7 +1099,7 @@ hsa_status_t HSA_API hsa_isa_from_name(const char* name, hsa_isa_t* isa) {
   return core::Isa::Create(name, isa);
 }
 
-hsa_status_t HSA_API hsa_isa_get_info(hsa_isa_t isa, hsa_isa_info_t attribute,
+hsa_status_t hsa_isa_get_info(hsa_isa_t isa, hsa_isa_info_t attribute,
                                       uint32_t index, void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
@@ -1096,7 +1110,7 @@ hsa_status_t HSA_API hsa_isa_get_info(hsa_isa_t isa, hsa_isa_info_t attribute,
   return isa_object->GetInfo(attribute, index, value);
 }
 
-hsa_status_t HSA_API hsa_isa_compatible(hsa_isa_t code_object_isa,
+hsa_status_t hsa_isa_compatible(hsa_isa_t code_object_isa,
                                         hsa_isa_t agent_isa, bool* result) {
   IS_OPEN();
   IS_BAD_PTR(result);
@@ -1114,7 +1128,52 @@ hsa_status_t HSA_API hsa_isa_compatible(hsa_isa_t code_object_isa,
 // Code object.
 //-----------------------------------------------------------------------------
 
-hsa_status_t HSA_API hsa_code_object_serialize(
+namespace {
+
+hsa_status_t IsCodeObjectAllocRegion(hsa_region_t region, void *data)
+{
+  assert(nullptr != data);
+  assert(0 == ((hsa_region_t*)data)->handle);
+
+  hsa_status_t status = HSA_STATUS_SUCCESS;
+  bool alloc_allowed;
+  if (HSA_STATUS_SUCCESS != (status = HSA::hsa_region_get_info(region, HSA_REGION_INFO_RUNTIME_ALLOC_ALLOWED, &alloc_allowed))) {
+    return status;
+  }
+  if (true == alloc_allowed) {
+    ((hsa_region_t*)data)->handle = region.handle;
+    return HSA_STATUS_INFO_BREAK;
+  }
+  return HSA_STATUS_SUCCESS;
+}
+
+hsa_status_t FindCodeObjectAllocRegionFromAgent(hsa_agent_t agent, void *data)
+{
+  assert(nullptr != data);
+  assert(0 == ((hsa_region_t*)data)->handle);
+
+  hsa_status_t status = HSA_STATUS_SUCCESS;
+  hsa_device_type_t agent_type;
+  if (HSA_STATUS_SUCCESS != (status = HSA::hsa_agent_get_info(agent, HSA_AGENT_INFO_DEVICE, &agent_type))) {
+    return status;
+  }
+  if (HSA_DEVICE_TYPE_CPU == agent_type) {
+    return HSA::hsa_agent_iterate_regions(agent, IsCodeObjectAllocRegion, data);
+  }
+  return HSA_STATUS_SUCCESS;
+}
+
+hsa_status_t FindCodeObjectAllocRegionFromSystem(void *data)
+{
+  assert(nullptr != data);
+
+  ((hsa_region_t*)data)->handle = 0;
+  return HSA::hsa_iterate_agents(FindCodeObjectAllocRegionFromAgent, data);
+}
+
+} // namespace anonymous
+
+hsa_status_t hsa_code_object_serialize(
     hsa_code_object_t code_object,
     hsa_status_t (*alloc_callback)(size_t size, hsa_callback_data_t data,
                                    void** address),
@@ -1125,21 +1184,10 @@ hsa_status_t HSA_API hsa_code_object_serialize(
   IS_BAD_PTR(serialized_code_object);
   IS_BAD_PTR(serialized_code_object_size);
 
-  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
-  if (!elfmemrd) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-
-  uint64_t elfmemsz = core::loader::ElfMemoryImage::Size(elfmemrd);
-  if (!elfmemsz) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
+  AmdHsaCode* code = core::Runtime::runtime_singleton_->code_manager()->FromHandle(code_object);
+  if (!code) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
+  size_t elfmemsz = code->ElfSize();
+  const char* elfmemrd = code->ElfData();
 
   hsa_status_t hsc = alloc_callback(elfmemsz,
                                     callback_data,
@@ -1154,7 +1202,7 @@ hsa_status_t HSA_API hsa_code_object_serialize(
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_code_object_deserialize(void* serialized_code_object,
                                 size_t serialized_code_object_size,
                                 const char* options,
@@ -1167,107 +1215,110 @@ hsa_status_t HSA_API
     return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
 
-  if (!core::loader::ElfMemoryImage::Is64(serialized_code_object)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::IsAmdGpu(serialized_code_object)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
+  hsa_status_t status = HSA_STATUS_SUCCESS;
 
-  void *elfmemrd = malloc(serialized_code_object_size);
-  if (!elfmemrd) {
-    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  // Find code object allocation region.
+  hsa_region_t code_object_alloc_region;
+  status = FindCodeObjectAllocRegionFromSystem(&code_object_alloc_region);
+  if (HSA_STATUS_SUCCESS != status && HSA_STATUS_INFO_BREAK != status) {
+    return status;
   }
+  assert(0 != code_object_alloc_region.handle);
 
-  memcpy(elfmemrd, serialized_code_object, serialized_code_object_size);
-  code_object->handle = reinterpret_cast<uint64_t>(elfmemrd);
+  // Allocate code object memory.
+  void *code_object_alloc_mem = nullptr;
+  status = HSA::hsa_memory_allocate(code_object_alloc_region,
+                                    serialized_code_object_size,
+                                    &code_object_alloc_mem);
+  if (HSA_STATUS_SUCCESS != status) {
+    return status;
+  }
+  assert(nullptr != code_object_alloc_mem);
+
+  // Copy code object into allocated code object memory.
+  status = HSA::hsa_memory_copy(code_object_alloc_mem,
+                                serialized_code_object,
+                                serialized_code_object_size);
+  if (HSA_STATUS_SUCCESS != status) {
+    return status;
+  }
+  code_object->handle = (uint64_t) (uintptr_t) code_object_alloc_mem;
 
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_code_object_destroy(hsa_code_object_t code_object) {
+hsa_status_t hsa_code_object_destroy(hsa_code_object_t code_object) {
   IS_OPEN();
 
   void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
   if (!elfmemrd) {
     return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
   }
-  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+
+  if (!core::Runtime::runtime_singleton_->code_manager()->Destroy(code_object)) {
     return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
   }
 
-  core::loader::AmdGpuImage::DestroySymbols(elfmemrd);
-  free(elfmemrd);
+  HSA::hsa_memory_free(elfmemrd);
 
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_code_object_get_info(hsa_code_object_t code_object,
+hsa_status_t hsa_code_object_get_info(hsa_code_object_t code_object,
                                               hsa_code_object_info_t attribute,
                                               void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
-  if (!elfmemrd) {
+  AmdHsaCode* code = core::Runtime::runtime_singleton_->code_manager()->FromHandle(code_object);
+  if (!code) {
     return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
   }
-  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  switch (attribute) {
+  case HSA_CODE_OBJECT_INFO_ISA: {
+    // TODO: currently AmdHsaCode::GetInfo return string representation.
+    // Fix when compute capability is available in libamdhsacode.
+    char isa_name[64];
+    hsa_status_t status = code->GetInfo(attribute, &isa_name);
+    if (status != HSA_STATUS_SUCCESS) { return status; }
+    if (HSA_STATUS_SUCCESS != HSA::hsa_isa_from_name(isa_name, (hsa_isa_t*)value)) {
+      return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+    }
+    return HSA_STATUS_SUCCESS;
   }
-  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  default:
+    return code->GetInfo(attribute, value);
   }
-
-  return core::loader::AmdGpuImage::GetInfo(elfmemrd, attribute, value);
 }
 
-hsa_status_t HSA_API hsa_code_object_get_symbol(hsa_code_object_t code_object,
+hsa_status_t hsa_code_object_get_symbol(hsa_code_object_t code_object,
                                                 const char *symbol_name,
                                                 hsa_code_symbol_t *symbol) {
   IS_OPEN();
   IS_BAD_PTR(symbol_name);
   IS_BAD_PTR(symbol);
 
-  void *elfmemrd = reinterpret_cast<void*>(code_object.handle);
-  if (!elfmemrd) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::Is64(elfmemrd)) {
-    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
-  }
-  if (!core::loader::ElfMemoryImage::IsAmdGpu(elfmemrd)) {
+  AmdHsaCode* code = core::Runtime::runtime_singleton_->code_manager()->FromHandle(code_object);
+  if (!code) {
     return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
   }
 
   // TODO(kzhuravl): module_name is NULL until spec is changed, waiting for
   // Mario.
-  return core::loader::AmdGpuImage::GetSymbol(elfmemrd, NULL, symbol_name, symbol);
+  return code->GetSymbol(NULL, symbol_name, symbol);
 }
 
-hsa_status_t HSA_API hsa_code_symbol_get_info(hsa_code_symbol_t code_symbol,
+hsa_status_t hsa_code_symbol_get_info(hsa_code_symbol_t code_symbol,
                                               hsa_code_symbol_info_t attribute,
                                               void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  core::loader::Symbol *sym = core::loader::Symbol::CConvert(code_symbol);
-  if (sym->IsKernel()) {
-    return ((core::loader::KernelSymbol*)sym)->GetInfo(
-      core::loader::symbol_attribute32_t(attribute), value);
-  } else if (sym->IsVariable()) {
-    return ((core::loader::VariableSymbol*)sym)->GetInfo(
-      core::loader::symbol_attribute32_t(attribute), value);
-  }
-
-  assert(false);
-  return HSA_STATUS_ERROR;
+  Symbol* sym = Symbol::FromHandle(code_symbol);
+  return sym->GetInfo(attribute, value);
 }
 
-hsa_status_t HSA_API hsa_code_object_iterate_symbols(
+hsa_status_t hsa_code_object_iterate_symbols(
     hsa_code_object_t code_object,
     hsa_status_t (*callback)(hsa_code_object_t code_object,
                              hsa_code_symbol_t symbol, void* data),
@@ -1275,14 +1326,19 @@ hsa_status_t HSA_API hsa_code_object_iterate_symbols(
   IS_OPEN();
   IS_BAD_PTR(callback);
 
-  return core::loader::AmdGpuImage::IterateSymbols(code_object, callback, data);
+  AmdHsaCode* code = core::Runtime::runtime_singleton_->code_manager()->FromHandle(code_object);
+  if (!code) {
+    return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
+  }
+
+  return code->IterateSymbols(code_object, callback, data);
 }
 
 //-----------------------------------------------------------------------------
 // Executable
 //-----------------------------------------------------------------------------
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_create(hsa_profile_t profile,
                           hsa_executable_state_t executable_state,
                           const char* options, hsa_executable_t* executable) {
@@ -1297,85 +1353,70 @@ hsa_status_t HSA_API
     return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
 
-  core::loader::Executable *exec = new core::loader::Executable(
-    profile,
-    executable_state);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Create(
+    profile, core::Runtime::runtime_singleton_->loader_context(), options);
   if (!exec) {
     return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
 
-  *executable = core::loader::Executable::Convert(exec);
+  // @todo(spec): why did we make it possible to create frozen executable?
+  if (HSA_EXECUTABLE_STATE_FROZEN == executable_state) {
+    exec->Freeze(NULL);
+  }
+
+  *executable = amd::hsa::loader::Executable::Handle(exec);
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API hsa_executable_destroy(hsa_executable_t executable) {
+hsa_status_t hsa_executable_destroy(hsa_executable_t executable) {
   IS_OPEN();
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  delete exec;
+  amd::hsa::loader::Executable::Destroy(exec);
   return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_load_code_object(hsa_executable_t executable,
                                     hsa_agent_t agent,
                                     hsa_code_object_t code_object,
                                     const char* options) {
-  IS_OPEN();
-
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
-  if (!exec) {
-    return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
-  }
-
-  return exec->LoadCodeObject(agent, code_object, options);
+  amd_loaded_code_object_t loaded_code_object = {0};
+  return amd_executable_load_code_object(
+    executable, agent, code_object, options, &loaded_code_object);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_freeze(hsa_executable_t executable, const char* options) {
   IS_OPEN();
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  return exec->Freeze();
+  return exec->Freeze(options);
 }
 
-hsa_status_t HSA_API hsa_executable_get_info(hsa_executable_t executable,
+hsa_status_t hsa_executable_get_info(hsa_executable_t executable,
                                              hsa_executable_info_t attribute,
                                              void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  switch (attribute) {
-    case HSA_EXECUTABLE_INFO_PROFILE: {
-      *((hsa_profile_t*)value) = exec->profile();
-      break;
-    }
-    case HSA_EXECUTABLE_INFO_STATE: {
-      *((hsa_executable_state_t*)value) = exec->state();
-      break;
-    }
-    default: {
-      return HSA_STATUS_ERROR_INVALID_ARGUMENT;
-    }
-  }
-
-  return HSA_STATUS_SUCCESS;
+  return exec->GetInfo(attribute, value);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_global_variable_define(hsa_executable_t executable,
                                           const char* variable_name,
                                           void* address) {
@@ -1383,15 +1424,15 @@ hsa_status_t HSA_API
   IS_BAD_PTR(variable_name);
   IS_BAD_PTR(address);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  return exec->DefineProgramVariable(variable_name, address);
+  return exec->DefineProgramExternalVariable(variable_name, address);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_agent_global_variable_define(hsa_executable_t executable,
                                                 hsa_agent_t agent,
                                                 const char* variable_name,
@@ -1400,16 +1441,16 @@ hsa_status_t HSA_API
   IS_BAD_PTR(variable_name);
   IS_BAD_PTR(address);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  return exec->DefineAgentVariable(
+  return exec->DefineAgentExternalVariable(
     variable_name, agent, HSA_VARIABLE_SEGMENT_GLOBAL, address);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_readonly_variable_define(hsa_executable_t executable,
                                             hsa_agent_t agent,
                                             const char* variable_name,
@@ -1418,21 +1459,21 @@ hsa_status_t HSA_API
   IS_BAD_PTR(variable_name);
   IS_BAD_PTR(address);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  return exec->DefineAgentVariable(
+  return exec->DefineAgentExternalVariable(
     variable_name, agent, HSA_VARIABLE_SEGMENT_READONLY, address);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_validate(hsa_executable_t executable, uint32_t* result) {
   IS_OPEN();
   IS_BAD_PTR(result);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
@@ -1440,7 +1481,7 @@ hsa_status_t HSA_API
   return exec->Validate(result);
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_get_symbol(hsa_executable_t executable,
                               const char* module_name, const char* symbol_name,
                               hsa_agent_t agent, int32_t call_convention,
@@ -1449,35 +1490,36 @@ hsa_status_t HSA_API
   IS_BAD_PTR(symbol_name);
   IS_BAD_PTR(symbol);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
 
-  return exec->GetSymbol(module_name, symbol_name, agent, call_convention, symbol);
+  amd::hsa::loader::Symbol *sym =
+    exec->GetSymbol(module_name == NULL ? "" : module_name, symbol_name, agent, call_convention);
+  if (!sym) {
+    return HSA_STATUS_ERROR_INVALID_SYMBOL_NAME;
+  }
+  *symbol = amd::hsa::loader::Symbol::Handle(sym);
+  return HSA_STATUS_SUCCESS;
 }
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_executable_symbol_get_info(hsa_executable_symbol_t executable_symbol,
                                    hsa_executable_symbol_info_t attribute,
                                    void* value) {
   IS_OPEN();
   IS_BAD_PTR(value);
 
-  core::loader::Symbol *sym = core::loader::Symbol::EConvert(executable_symbol);
-  if (sym->IsKernel()) {
-    return ((core::loader::KernelSymbol*)sym)->GetInfo(
-      core::loader::symbol_attribute32_t(attribute), value);
-  } else if (sym->IsVariable()) {
-    return ((core::loader::VariableSymbol*)sym)->GetInfo(
-      core::loader::symbol_attribute32_t(attribute), value);
+  amd::hsa::loader::Symbol *sym = amd::hsa::loader::Symbol::Object(executable_symbol);
+  if (!sym) {
+    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
   }
-
-  assert(false);
-  return HSA_STATUS_ERROR;
+  return sym->GetInfo(attribute, value) ?
+    HSA_STATUS_SUCCESS : HSA_STATUS_ERROR_INVALID_ARGUMENT;
 }
 
-hsa_status_t HSA_API hsa_executable_iterate_symbols(
+hsa_status_t hsa_executable_iterate_symbols(
     hsa_executable_t executable,
     hsa_status_t (*callback)(hsa_executable_t executable,
                              hsa_executable_symbol_t symbol, void* data),
@@ -1485,7 +1527,7 @@ hsa_status_t HSA_API hsa_executable_iterate_symbols(
   IS_OPEN();
   IS_BAD_PTR(callback);
 
-  core::loader::Executable *exec = core::loader::Executable::Convert(executable);
+  amd::hsa::loader::Executable *exec = amd::hsa::loader::Executable::Object(executable);
   if (!exec) {
     return HSA_STATUS_ERROR_INVALID_EXECUTABLE;
   }
@@ -1497,7 +1539,7 @@ hsa_status_t HSA_API hsa_executable_iterate_symbols(
 // Errors
 //-----------------------------------------------------------------------------
 
-hsa_status_t HSA_API
+hsa_status_t 
     hsa_status_string(hsa_status_t status, const char** status_string) {
   IS_OPEN();
   IS_BAD_PTR(status_string);
