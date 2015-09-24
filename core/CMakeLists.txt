@@ -11,16 +11,15 @@ cmake_minimum_required ( VERSION 2.8.0 )
 ## 
 ## Obtaining kfd-thunk  headers and shared library:
 ##
-## Headers: Get kfd-thunk sources from git repository:
-##          <install_dir>$git clone http://cgit.freedesktop.org/~gabbayo/libhsakmt
-##          export HSA_BUILD_INC_PATH=<install_dir>/libhsakmt/include
+## Headers: Get kfd-thunk sources from the HSA-Drivers-Linux-AMD repository:
+##     $git clone https://github.com/HSAFoundation/HSA-Drivers-Linux-AMD.git 
+##     export HSA_BUILD_INC_PATH=
+##                      <driver dir>/src/libhsakmt/include
 ##
 ## Library: Go to the libhsakmt folder you cloned in the previous step
-##          Run 'make'
-##          for 64 bit, export HSA_BUILD_LIB_PATH=
-##                                <install_dir>/libhsakmt/build/lnx64a
-##          for 32 bit, export HSA_BUILD_LIB_PATH=
-##                                <install_dir>/libhsakmt/build/lnx
+##     Run 'make'
+##     export HSA_BUILD_LIB_PATH=
+##                      <driver dir>/src/libhsakmt/build/lnx64a
 ##
 ## The system environment is now ready to build HSA. Please see the
 ## "Usage" instructions below.
