@@ -3,6 +3,8 @@ HSA-Runtime-Reference-Source
 
 This repository contains the HSA Runtime source code, released primarily for user reference and experimentation purposes.
 
+For People looking for commercially supported implementation on AMD Hardware please use the ROCr runtime at  https://github.com/RadeonOpenCompute/ROCR-Runtime 
+
 ### Package Contents
 
 ##### Source & Include directories
